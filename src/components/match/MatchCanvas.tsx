@@ -1,0 +1,290 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { Engine, Vector3 } from '@babylonjs/core';
+import { createStadiumScene } from '../../babylon/sceneBuilder';
+import { createCameraRig } from '../../babylon/cameraRig';
+import { createBallTrajectoryController } from '../../babylon/ballTrajectory';
+import { loadCharacter, loadFieldingTeam, PlayerCharacterRig } from '../../babylon/playerMeshes';
+import {
+  startIdleAnimation,
+  playBowlingAnimation,
+  playShotAnimation,
+  playAppealAnimation,
+  playCelebrateAnimation,
+  playWicketShatterAnimation,
+  resetBattingStance,
+} from '../../babylon/animations';
+import { useMatchStore } from '../../state/matchStore';
+import { soundManager } from '../../audio/soundManager';
+
+// Real-scale batsman spawn (guard at Z = -8.8)
+const BATSMAN_POS = new Vector3(-0.30, 0, -8.8);
+// Bowler spawn at top of run-up
+const BOWLER_POS = new Vector3(0.35, 0, 28.0);
+
+export const MatchCanvas: React.FC = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [initError, setInitError] = useState<string | null>(null);
+
+  const phase = useMatchStore((s) => s.phase);
+  const currentBallLine = useMatchStore((s) => s.currentBallLine);
+  const currentBallLength = useMatchStore((s) => s.currentBallLength);
+  const currentBallCombination = useMatchStore((s) => s.currentBallCombination);
+  const currentBallSpeed = useMatchStore((s) => s.currentBallSpeed);
+  const lastBallEvent = useMatchStore((s) => s.lastBallEvent);
+  const screenShakeIntensity = useMatchStore((s) => s.screenShakeIntensity);
+  const battingTeam = useMatchStore((s) => s.battingTeam);
+  const bowlingTeam = useMatchStore((s) => s.bowlingTeam);
+  const userPlayer = useMatchStore((s) => s.userPlayer);
+
+  const releaseBall = useMatchStore((s) => s.releaseBall);
+  const executeContactImpact = useMatchStore((s) => s.executeContactImpact);
+  const pendingShotDirection = useMatchStore((s) => s.pendingShotDirection);
+  const onBallMissedTimeout = useMatchStore((s) => s.onBallMissedTimeout);
+  const finishBallAndAdvance = useMatchStore((s) => s.finishBallAndAdvance);
+
+  const engineRef = useRef<Engine | null>(null);
+  const cameraRigRef = useRef<ReturnType<typeof createCameraRig> | null>(null);
+  const ballCtrlRef = useRef<ReturnType<typeof createBallTrajectoryController> | null>(null);
+  const batterRigRef = useRef<PlayerCharacterRig | null>(null);
+  const bowlerRigRef = useRef<PlayerCharacterRig | null>(null);
+  const fieldersRef = useRef<PlayerCharacterRig[]>([]);
+  const stumpsRef = useRef<any>(null);
+  const stopIdleRef = useRef<(() => void) | null>(null);
+  const shotPlayedRef = useRef(false);
+  // Single source of truth for whether this scene instance is alive
+  const aliveRef = useRef<{ dead: boolean }>({ dead: false });
+
+  // Scene setup
+  useEffect(() => {
+    if (!canvasRef.current || !battingTeam || !bowlingTeam) return;
+
+    // Each mount gets its own alive token — all async callbacks close over this object
+    const alive = { dead: false };
+    aliveRef.current = alive;
+
+    let engine: Engine | null = null;
+    let cameraRig: ReturnType<typeof createCameraRig> | null = null;
+    let sceneComp: ReturnType<typeof createStadiumScene> | null = null;
+
+    try {
+      engine = new Engine(canvasRef.current, true, {
+        preserveDrawingBuffer: true,
+        stencil: true,
+        antialias: true,
+      });
+      engineRef.current = engine;
+
+      sceneComp = createStadiumScene(engine, canvasRef.current!);
+      cameraRig = createCameraRig(sceneComp.scene, canvasRef.current!);
+      cameraRigRef.current = cameraRig;
+      stumpsRef.current = sceneComp.stumpsStriker;
+
+      const ballCtrl = createBallTrajectoryController(sceneComp.scene);
+      ballCtrlRef.current = ballCtrl;
+
+      // Start rendering stadium immediately
+      engine.runRenderLoop(() => {
+        if (!alive.dead && sceneComp?.scene && !sceneComp.scene.isDisposed) {
+          try {
+            sceneComp.scene.render();
+          } catch (renderErr) {
+            console.error('[RenderLoop] Error during render:', renderErr);
+          }
+        }
+      });
+
+      // Asynchronous character loading
+      const loadCharactersAsync = async () => {
+        try {
+          if (alive.dead) return;
+
+          // 1. Striker
+          const batterRig = await loadCharacter(
+            sceneComp!.scene,
+            'striker',
+            BATSMAN_POS,
+            battingTeam,
+            {
+              isBatter: true,
+              batColor: userPlayer?.batColor || '#D4A373',
+              jerseyNumber: userPlayer?.battingPosition || 1,
+              avatarId: userPlayer?.avatarId,
+              shadowGenerator: sceneComp!.shadowGenerator,
+            }
+          );
+          if (alive.dead) return;
+          batterRigRef.current = batterRig;
+          stopIdleRef.current = startIdleAnimation(batterRig);
+
+          // 2. Bowler
+          const bowlerRig = await loadCharacter(
+            sceneComp!.scene,
+            'bowler',
+            BOWLER_POS,
+            bowlingTeam,
+            {
+              isBowler: true,
+              shadowGenerator: sceneComp!.shadowGenerator,
+            }
+          );
+          if (alive.dead) return;
+          bowlerRigRef.current = bowlerRig;
+
+          // 3. Fielders
+          const fielders = await loadFieldingTeam(sceneComp!.scene, bowlingTeam, sceneComp!.shadowGenerator);
+          if (alive.dead) return;
+          fieldersRef.current = fielders;
+        } catch (charErr: any) {
+          if (!alive.dead) {
+            console.error('Character loading from player.glb failed:', charErr);
+            setInitError(charErr?.message || 'Error loading 3D player.glb model');
+          }
+        }
+      };
+
+      loadCharactersAsync();
+
+    } catch (e: any) {
+      console.error('Babylon 3D Scene init failed:', e);
+      setInitError(e?.message || 'WebGL initialization error');
+    }
+
+    const onResize = () => {
+      if (engine && !alive.dead) engine.resize();
+    };
+    window.addEventListener('resize', onResize);
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (alive.dead) return;
+      const k = e.key.toLowerCase();
+      if (
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight' ||
+        e.key === 'ArrowUp' ||
+        e.key === 'ArrowDown' ||
+        k === 'a' ||
+        k === 'w' ||
+        k === 'd' ||
+        k === 's'
+      ) {
+        if (batterRigRef.current) {
+          playShotAnimation(batterRigRef.current, 'straight');
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      // Mark this scene instance as dead — all async callbacks that close over `alive` will exit early
+      alive.dead = true;
+
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('keydown', onKeyDown);
+      if (stopIdleRef.current) stopIdleRef.current();
+
+      // Null all rig refs so phase-effect callbacks cannot access disposed rigs
+      batterRigRef.current = null;
+      bowlerRigRef.current = null;
+      fieldersRef.current = [];
+      ballCtrlRef.current = null;
+      cameraRigRef.current = null;
+
+      try { if (cameraRig) cameraRig.dispose(); } catch (_) {}
+      try { if (sceneComp?.scene && !sceneComp.scene.isDisposed) sceneComp.scene.dispose(); } catch (_) {}
+      try { if (engine) engine.dispose(); } catch (_) {}
+      engineRef.current = null;
+    };
+  }, [battingTeam?.id, bowlingTeam?.id]);
+
+  // Phase-driven animation reactions
+  useEffect(() => {
+    // Guard: only run if all required refs are live
+    if (!cameraRigRef.current || !ballCtrlRef.current) return;
+    if (aliveRef.current.dead) return;
+
+    if (phase === 'ready') {
+      shotPlayedRef.current = false;
+      cameraRigRef.current.setMode('batting');
+      ballCtrlRef.current.resetToBowler();
+      if (batterRigRef.current) resetBattingStance(batterRigRef.current);
+    } else if (phase === 'bowling_runup') {
+      shotPlayedRef.current = false;
+      if (!bowlerRigRef.current) return;
+      cameraRigRef.current.setMode('batting');
+      ballCtrlRef.current.resetToBowler();
+      soundManager.playBowlerRunup(950);
+      playBowlingAnimation(bowlerRigRef.current, 950, () => {
+        if (!aliveRef.current.dead) {
+          soundManager.stopBowlerRunup();
+          soundManager.playBallRelease();
+          releaseBall();
+        }
+      });
+    } else if (phase === 'ball_active') {
+      shotPlayedRef.current = false;
+      cameraRigRef.current.setMode('batting');
+      ballCtrlRef.current.animateDeliveryCombination(
+        currentBallCombination || 'length_mid',
+        currentBallSpeed,
+        () => {},
+        () => { if (!aliveRef.current.dead) executeContactImpact(); }
+      );
+    } else if (phase === 'hit_impact') {
+      if (lastBallEvent) {
+        cameraRigRef.current.triggerScreenShake(screenShakeIntensity);
+        if (!shotPlayedRef.current && batterRigRef.current && lastBallEvent.isUserBall && lastBallEvent.outcome !== 'wicket') {
+          shotPlayedRef.current = true;
+          playShotAnimation(batterRigRef.current, lastBallEvent.shotDirection || 'straight', 340);
+        }
+      }
+    } else if (phase === 'ball_flight') {
+      if (lastBallEvent) {
+        if (lastBallEvent.outcome === '6' || lastBallEvent.outcome === '4') {
+          soundManager.playCrowdCheer(lastBallEvent.outcome === '6');
+          cameraRigRef.current.triggerScreenShake(screenShakeIntensity);
+          if (batterRigRef.current) playCelebrateAnimation(batterRigRef.current, 1400);
+        } else if (lastBallEvent.outcome === 'wicket') {
+          if (stumpsRef.current) playWicketShatterAnimation(stumpsRef.current);
+          if (bowlerRigRef.current) playAppealAnimation(bowlerRigRef.current, 1200);
+          fieldersRef.current.forEach((f) => playAppealAnimation(f, 1200));
+        }
+
+        // Trigger stroke once if not already fired during hit_impact
+        if (!shotPlayedRef.current && batterRigRef.current && lastBallEvent.isUserBall && lastBallEvent.outcome !== 'wicket') {
+          shotPlayedRef.current = true;
+          playShotAnimation(batterRigRef.current, lastBallEvent.shotDirection || 'straight', 340);
+        }
+
+        if (ballCtrlRef.current) {
+          ballCtrlRef.current.animateShot(
+            lastBallEvent.outcome,
+            lastBallEvent.shotDirection || 'straight',
+            () => {
+              if (!aliveRef.current.dead) {
+                setTimeout(() => {
+                  if (!aliveRef.current.dead) finishBallAndAdvance();
+                }, 650);
+              }
+            }
+          );
+        }
+      }
+    }
+  }, [phase, lastBallEvent, currentBallLine, currentBallSpeed]);
+
+  if (initError) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-[#0B1220] text-[#F5F7FA] p-6 text-center">
+        <div className="text-4xl mb-3">⚠️</div>
+        <h3 className="text-xl font-bold text-[#FF4757] mb-2">3D Engine / Asset Error</h3>
+        <p className="text-xs text-[#8A93A6] max-w-md">{initError}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative w-full h-full bg-[#0B1220] overflow-hidden">
+      <canvas ref={canvasRef} className="w-full h-full outline-none block cursor-crosshair touch-none" />
+    </div>
+  );
+};
