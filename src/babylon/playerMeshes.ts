@@ -334,8 +334,8 @@ export async function loadCharacter(
           importedBat.attachToBone(bones.rightHand, characterMesh);
 
           // Bat grip offset: blade angled down and back, resting near ground beside back leg in cricket stance
-          importedBat.position = new Vector3(0.0, -3.5, 0.5);
-          importedBat.rotationQuaternion = Quaternion.RotationYawPitchRoll(0.12, Math.PI / 2 + 0.15, -0.22);
+          importedBat.position = new Vector3(0.0, -4.0, 0.0);
+          importedBat.rotationQuaternion = Quaternion.RotationYawPitchRoll(0.0, Math.PI / 2, 0.0);
 
           const batPBR = new PBRMaterial(`pbr_bat_${name}`, scene);
           batPBR.albedoTexture = createWillowBatTexture(scene, options.batColor ?? '#D4A373');
@@ -380,8 +380,7 @@ export async function loadCharacter(
   if (options?.isBatter) {
     rootMesh.rotationQuaternion = null;
     // Right-handed batsman: stand side-on, left shoulder pointing toward bowler (+Z)
-    // rotation.y = Math.PI rotates 180° (faces camera), then offset ~0.52 rad for side-on stance
-    rootMesh.rotation.y = Math.PI - 0.52;
+    rootMesh.rotation.y = Math.PI;
   } else if (options?.isBowler) {
     rootMesh.rotationQuaternion = null;
     // Bowler at Z=28 must face toward batsman at Z=-8.8 (face -Z direction = Math.PI)

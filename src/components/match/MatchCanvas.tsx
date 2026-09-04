@@ -17,8 +17,8 @@ import {
 import { useMatchStore } from '../../state/matchStore';
 import { soundManager } from '../../audio/soundManager';
 
-// Real-scale batsman spawn (guard at Z = -8.8)
-const BATSMAN_POS = new Vector3(-0.30, 0, -8.8);
+// Real-scale batsman spawn (properly aligned on leg/middle guard at Z = -9.25, in front of stumps at Z = -10.06)
+const BATSMAN_POS = new Vector3(-0.12, 0, -9.25);
 // Bowler spawn at top of run-up
 const BOWLER_POS = new Vector3(0.35, 0, 28.0);
 

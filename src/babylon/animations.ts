@@ -185,7 +185,7 @@ export async function playBatterShotAnimation(
 ) {
   if (!isRigAlive(batterRig)) return;
   try {
-    const baseRotY = Math.PI - 0.52;
+    const baseRotY = Math.PI;
     // Directional stance swivel during the stroke:
     // leg: pull/swivel toward leg side (left)
     // off: step out / cut toward off side (right)
@@ -210,7 +210,8 @@ export async function playBatterShotAnimation(
     } else if (selectedAnim === 'sweep_shot') {
       shotGroup = await batterRig.playAnimation('sweep_shot', false, 1.25);
     } else if (selectedAnim === 'reverse_sweep') {
-      shotGroup = await batterRig.playAnimation('reverse_sweep', false, 1.35);
+      // Snappy and brisk reverse sweep playback (2.3x)
+      shotGroup = await batterRig.playAnimation('reverse_sweep', false, 2.3);
     } else if (selectedAnim === 'straight_hit_loft') {
       shotGroup = await batterRig.playAnimation('straight_hit_loft', false, 1.35);
     } else if (selectedAnim === 'straight_hit_chip') {
@@ -270,7 +271,12 @@ export function playShotAnimation(
 }
 
 export function resetBattingStance(batterRig: PlayerCharacterRig) {
-  if (isRigAlive(batterRig)) batterRig.playAnimation('new_batsman_idle', true);
+  if (isRigAlive(batterRig)) {
+    if (batterRig.root && batterRig.root.rotation) {
+      batterRig.root.rotation.y = Math.PI;
+    }
+    batterRig.playAnimation('new_batsman_idle', true);
+  }
 }
 
 export function playAppealAnimation(rig: PlayerCharacterRig, _durationMs: number = 1200) {
