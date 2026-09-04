@@ -12,6 +12,7 @@ import {
   NpcPlayer,
   Player,
   ShotDirection,
+  ShotStrokeType,
   Team,
   TimingQuality
 } from '../types';
@@ -116,7 +117,7 @@ interface MatchActions {
   confirmWalkoutAndLoad3D: () => void;
   startBowlerRunup: () => void;
   releaseBall: () => void;
-  onDirectionInput: (direction: ShotDirection, timestamp?: number) => void;
+  onDirectionInput: (direction: ShotDirection, timestamp?: number, strokeType?: ShotStrokeType) => void;
   executeContactImpact: () => void;
   onBallMissedTimeout: () => void;
   stepSimScoreboardBall: () => void;
@@ -394,7 +395,7 @@ export const useMatchStore = create<LiveMatchState & MatchActions>((set, get) =>
     });
   },
 
-  onDirectionInput: (direction, timestamp) => {
+  onDirectionInput: (direction, timestamp, strokeType) => {
     const state = get();
     if (state.hasUserActedOnCurrentBall) return;
 
@@ -429,6 +430,7 @@ export const useMatchStore = create<LiveMatchState & MatchActions>((set, get) =>
         windowWidthMs: state.timingWindowMs,
         timingQuality,
         progressRatio,
+        strokeType: strokeType || 'standard',
       },
     });
 
@@ -438,7 +440,7 @@ export const useMatchStore = create<LiveMatchState & MatchActions>((set, get) =>
       soundManager.playBatCrack('medium');
     } else if (event.outcome === 'wicket') {
       soundManager.playWicketSound();
-    } else if (event.runs > 0) {
+    } else if (event.runs > 0 || strokeType === 'defense') {
       soundManager.playBatCrack('soft');
     }
 

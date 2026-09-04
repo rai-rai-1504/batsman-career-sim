@@ -19,7 +19,7 @@ function isRigAlive(rig: PlayerCharacterRig): boolean {
  * 1. Start Idle Animation
  */
 export function startIdleAnimation(batterRig: PlayerCharacterRig): () => void {
-  batterRig.playAnimation('baseball_idle', true);
+  batterRig.playAnimation('new_batsman_idle', true);
   return () => {};
 }
 
@@ -180,7 +180,8 @@ export function playFullBowlingSequence(
 export async function playBatterShotAnimation(
   batterRig: PlayerCharacterRig,
   direction: ShotDirection = 'straight',
-  onComplete?: () => void
+  onComplete?: () => void,
+  animName?: string
 ) {
   if (!isRigAlive(batterRig)) return;
   try {
@@ -197,8 +198,30 @@ export async function playBatterShotAnimation(
       batterRig.root.rotation.y = targetRotY;
     }
 
-    // Trimmed: start at frame 27, end at frame 52 (frames 54 to 104 in Babylon 60fps), played 3x as fast
-    const strikeGroup = await batterRig.playAnimation('baseball_strike', false, 3.0, 54, 104);
+    const selectedAnim = animName || 'baseball_strike';
+    let shotGroup: any = null;
+
+    if (selectedAnim === 'pull_shot') {
+      shotGroup = await batterRig.playAnimation('pull_shot', false, 1.15);
+    } else if (selectedAnim === 'flick_shot') {
+      shotGroup = await batterRig.playAnimation('flick_shot', false, 1.25);
+    } else if (selectedAnim === 'defense') {
+      shotGroup = await batterRig.playAnimation('defense', false, 1.1);
+    } else if (selectedAnim === 'sweep_shot') {
+      shotGroup = await batterRig.playAnimation('sweep_shot', false, 1.25);
+    } else if (selectedAnim === 'reverse_sweep') {
+      shotGroup = await batterRig.playAnimation('reverse_sweep', false, 1.35);
+    } else if (selectedAnim === 'straight_hit_loft') {
+      shotGroup = await batterRig.playAnimation('straight_hit_loft', false, 1.35);
+    } else if (selectedAnim === 'straight_hit_chip') {
+      shotGroup = await batterRig.playAnimation('straight_hit_chip', false, 1.35);
+    } else if (selectedAnim === 'batsman_out') {
+      shotGroup = await batterRig.playAnimation('batsman_out', false, 1.0);
+    } else {
+      // Trimmed: start at frame 27, end at frame 52 (frames 54 to 104 in Babylon 60fps), played 3x as fast
+      shotGroup = await batterRig.playAnimation('baseball_strike', false, 3.0, 54, 104);
+    }
+
     if (!isRigAlive(batterRig)) return;
 
     const restoreStance = () => {
@@ -206,13 +229,13 @@ export async function playBatterShotAnimation(
         if (batterRig.root && batterRig.root.rotation) {
           batterRig.root.rotation.y = baseRotY;
         }
-        batterRig.playAnimation('baseball_idle', true);
+        batterRig.playAnimation('new_batsman_idle', true);
       }
       if (onComplete) onComplete();
     };
 
-    if (strikeGroup) {
-      strikeGroup.onAnimationEndObservable.addOnce(restoreStance);
+    if (shotGroup) {
+      shotGroup.onAnimationEndObservable.addOnce(restoreStance);
     } else {
       restoreStance();
     }
@@ -240,13 +263,14 @@ export function playShotAnimation(
   batterRig: PlayerCharacterRig,
   direction: ShotDirection = 'straight',
   _durationMs: number = 340,
-  onFinish?: () => void
+  onFinish?: () => void,
+  animName?: string
 ) {
-  playBatterShotAnimation(batterRig, direction, onFinish);
+  playBatterShotAnimation(batterRig, direction, onFinish, animName);
 }
 
 export function resetBattingStance(batterRig: PlayerCharacterRig) {
-  if (isRigAlive(batterRig)) batterRig.playAnimation('baseball_idle', true);
+  if (isRigAlive(batterRig)) batterRig.playAnimation('new_batsman_idle', true);
 }
 
 export function playAppealAnimation(rig: PlayerCharacterRig, _durationMs: number = 1200) {

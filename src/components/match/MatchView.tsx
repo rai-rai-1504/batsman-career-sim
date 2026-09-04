@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useMatchStore } from '../../state/matchStore';
 import { MatchCanvas } from './MatchCanvas';
 import { ScoreboardHUD } from './ScoreboardHUD';
@@ -43,9 +43,15 @@ export const MatchView: React.FC<MatchViewProps> = ({ onExitMatch }) => {
     };
   }, [isOnField3D, isUserStriker, phase, isPaused]);
 
+  // Active pressed keys tracker for multi-key combos (e.g. M + Left for Sweep)
+  const keysDownRef = useRef<Set<string>>(new Set());
+
   // Keyboard Event Listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      keysDownRef.current.add(k);
+
       // ESC Key toggles pause
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -53,23 +59,44 @@ export const MatchView: React.FC<MatchViewProps> = ({ onExitMatch }) => {
         return;
       }
 
+      // Neutralize raw Shift key to prevent speed distortion or browser shortcuts
+      if (e.key === 'Shift') {
+        e.preventDefault();
+        return;
+      }
+
       if (isPaused) return;
 
       if (isOnField3D && isUserStriker) {
-        // STRICT: We won't register an input until the ball has been released (important)
+        // STRICT: We won't register an input until the ball has been released
         if (phase === 'ball_active') {
-          if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') {
+          const isHoldingM = keysDownRef.current.has('m');
+
+          if (e.key === 'ArrowDown' || k === 's') {
+            // Forward Defensive stroke (decreases wicket probability, never yields runs)
             e.preventDefault();
-            onDirectionInput('leg');
-          } else if (e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') {
+            onDirectionInput('straight', undefined, 'defense');
+          } else if (e.key === 'ArrowLeft' || k === 'a') {
             e.preventDefault();
-            onDirectionInput('straight');
-          } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') {
+            if (isHoldingM) {
+              // Sweep Shot (M + Left) -> short balls always result in dot
+              onDirectionInput('leg', undefined, 'sweep');
+            } else {
+              // Standard Leg Side stroke (Glance / Pull if short)
+              onDirectionInput('leg', undefined, 'standard');
+            }
+          } else if (e.key === 'ArrowRight' || k === 'd') {
             e.preventDefault();
-            onDirectionInput('off');
-          } else if (e.key === 'ArrowDown' || e.key.toLowerCase() === 's') {
+            if (isHoldingM) {
+              // Reverse Sweep (M + Right) -> short balls always result in dot
+              onDirectionInput('off', undefined, 'reverse_sweep');
+            } else {
+              // Standard Off Side stroke (Drive / Cut)
+              onDirectionInput('off', undefined, 'standard');
+            }
+          } else if (e.key === 'ArrowUp' || k === 'w') {
             e.preventDefault();
-            onDirectionInput('straight');
+            onDirectionInput('straight', undefined, 'standard');
           }
         } else if (phase === 'ready') {
           if (e.key === ' ' || e.key === 'Enter') {
@@ -80,8 +107,16 @@ export const MatchView: React.FC<MatchViewProps> = ({ onExitMatch }) => {
       }
     };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      keysDownRef.current.delete(e.key.toLowerCase());
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, [phase, isUserStriker, isOnField3D, isPaused]);
 
   const handleStartMatchFromToss = () => {

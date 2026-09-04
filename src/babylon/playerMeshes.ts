@@ -61,38 +61,61 @@ function getOrCreateSceneCache(scene: Scene): Map<string, AnimationGroup> {
 
 export async function preloadAllAnimationTemplates(scene: Scene): Promise<void> {
   const cache = getOrCreateSceneCache(scene);
-  const animList = [
-    'standing_idle',
-    'baseball_idle',
-    'standing_jump_running',
-    'baseball_pitching',
-    'baseball_strike',
+  const animList: Array<{ name: string; path: string; file: string }> = [
+    // Standard locomotion & bowler animations
+    { name: 'standing_idle', path: '/models/animations/', file: 'standing_idle.glb' },
+    { name: 'baseball_idle', path: '/models/animations/', file: 'baseball_idle.glb' },
+    { name: 'standing_jump_running', path: '/models/animations/', file: 'standing_jump_running.glb' },
+    { name: 'baseball_pitching', path: '/models/animations/', file: 'baseball_pitching.glb' },
+    { name: 'baseball_strike', path: '/models/animations/', file: 'baseball_strike.glb' },
+
+    // Authentic Cricket Animations
+    { name: 'new_batsman_idle', path: '/models/animations/new animations/', file: 'new batsman idle.glb' },
+    { name: 'pull_shot', path: '/models/animations/new animations/', file: 'pull shot.glb' },
+    { name: 'flick_shot', path: '/models/animations/new animations/', file: 'flick shot.glb' },
+    { name: 'defense', path: '/models/animations/new animations/', file: 'defense.glb' },
+    { name: 'reverse_sweep', path: '/models/animations/new animations/', file: 'reverse sweep.glb' },
+    { name: 'sweep_shot', path: '/models/animations/new animations/', file: 'sweep shot.glb' },
+    { name: 'straight_hit_loft', path: '/models/animations/new animations/', file: 'straight hit (loft).glb' },
+    { name: 'straight_hit_chip', path: '/models/animations/new animations/', file: 'straight hit (chip).glb' },
+    { name: 'batsman_out', path: '/models/animations/new animations/', file: 'batsman out.glb' },
+    { name: 'batsman_post_shot', path: '/models/animations/new animations/', file: 'batsman (post shot).glb' },
   ];
 
-  for (const name of animList) {
-    if (cache.has(name)) continue;
+  for (const item of animList) {
+    if (cache.has(item.name)) continue;
     // Abort if scene was disposed while we were loading a previous animation
     if ((scene as any).isDisposed) {
-      console.warn(`[AnimLoader] Scene disposed — aborting preload at "${name}"`);
+      console.warn(`[AnimLoader] Scene disposed — aborting preload at "${item.name}"`);
       return;
     }
     try {
-      console.log(`[AnimLoader] Loading /models/animations/${name}.glb`);
-      const res = await SceneLoader.ImportMeshAsync('', '/models/animations/', `${name}.glb`, scene);
+      console.log(`[AnimLoader] Loading ${item.path}${item.file}`);
+      let res: Awaited<ReturnType<typeof SceneLoader.ImportMeshAsync>>;
+      try {
+        res = await SceneLoader.ImportMeshAsync('', item.path, item.file, scene);
+      } catch (firstErr) {
+        // Fallback for straight hit (chip) if named (ship)
+        if (item.name === 'straight_hit_chip') {
+          res = await SceneLoader.ImportMeshAsync('', item.path, 'straight hit (ship).glb', scene);
+        } else {
+          throw firstErr;
+        }
+      }
       // Re-check after async gap
       if ((scene as any).isDisposed) return;
       if (res.animationGroups?.length > 0) {
         const ag = res.animationGroups[0];
-        ag.name = `template_${name}`;
+        ag.name = `template_${item.name}`;
         ag.stop();
         res.meshes.forEach(m => { m.setEnabled(false); m.isVisible = false; });
-        cache.set(name, ag);
-        console.log(`[AnimLoader] Cached "${name}" (${ag.targetedAnimations.length} channels)`);
+        cache.set(item.name, ag);
+        console.log(`[AnimLoader] Cached "${item.name}" (${ag.targetedAnimations.length} channels)`);
       } else {
-        console.warn(`[AnimLoader] No animation groups in ${name}.glb`);
+        console.warn(`[AnimLoader] No animation groups in ${item.file}`);
       }
     } catch (err) {
-      console.error(`[AnimLoader] FAILED to load ${name}.glb:`, err);
+      console.error(`[AnimLoader] FAILED to load ${item.file}:`, err);
     }
   }
 }
@@ -310,9 +333,9 @@ export async function loadCharacter(
           // Attach to RightHand bone using mesh.attachToBone(handBone, characterMesh)
           importedBat.attachToBone(bones.rightHand, characterMesh);
 
-          // Bat grip offset: blade angled down and back, resting near ground beside back leg
-          importedBat.position = new Vector3(2.0, -8.0, -2.0);
-          importedBat.rotationQuaternion = new Quaternion(0.3016, -0.3595, 0.2336, 0.8516);
+          // Bat grip offset: blade angled down and back, resting near ground beside back leg in cricket stance
+          importedBat.position = new Vector3(0.0, -3.5, 0.5);
+          importedBat.rotationQuaternion = Quaternion.RotationYawPitchRoll(0.12, Math.PI / 2 + 0.15, -0.22);
 
           const batPBR = new PBRMaterial(`pbr_bat_${name}`, scene);
           batPBR.albedoTexture = createWillowBatTexture(scene, options.batColor ?? '#D4A373');

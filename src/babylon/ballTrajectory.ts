@@ -10,7 +10,7 @@ import {
   ParticleSystem,
   DynamicTexture,
 } from '@babylonjs/core';
-import { BallLength, BallLine, BallOutcome, DeliveryCombination, DismissalType, ShotDirection } from '../types';
+import { BallLength, BallLine, BallOutcome, DeliveryCombination, DismissalType, ShotDirection, ShotStrokeType } from '../types';
 import { soundManager } from '../audio/soundManager';
 import { playWicketShatterAnimation } from './animations';
 
@@ -139,7 +139,8 @@ export interface BallTrajectoryController {
     onComplete: () => void,
     dismissalType?: DismissalType,
     stumpsGroup?: any,
-    isPlayAndMiss?: boolean
+    isPlayAndMiss?: boolean,
+    strokeType?: ShotStrokeType
   ) => void;
   stop: () => void;
 }
@@ -555,7 +556,8 @@ export function createBallTrajectoryController(scene: Scene): BallTrajectoryCont
     onComplete: () => void,
     dismissalType?: DismissalType,
     stumpsGroup?: any,
-    isPlayAndMiss?: boolean
+    isPlayAndMiss?: boolean,
+    strokeType?: ShotStrokeType
   ) => {
     if (raf !== null) { cancelAnimationFrame(raf); }
     ringMesh.isVisible = false;
@@ -643,7 +645,37 @@ export function createBallTrajectoryController(scene: Scene): BallTrajectoryCont
       return;
     }
 
-    // ─── 3. BAT CONTACT: Outfield Shot Trajectories ─────────────────────────────
+    // ─── 3. FORWARD DEFENSE: Soft dead-bat block dropping right at feet ──────────
+    if (strokeType === 'defense') {
+      const defDropPos = new Vector3(startPos.x * 0.35, 0.08, -7.2);
+      const dur = 480;
+
+      const t0 = performance.now();
+      const step = (now: number) => {
+        const elapsed = now - t0;
+        const t = Math.min(1, elapsed / dur);
+
+        const x = startPos.x + (defDropPos.x - startPos.x) * t;
+        const z = startPos.z + (defDropPos.z - startPos.z) * t;
+        const bY = (1 - t) * startPos.y + t * defDropPos.y;
+        const hop = Math.sin(t * Math.PI) * 0.12 * (1 - t);
+        const y = Math.max(0.08, bY + hop);
+
+        ballMesh.rotation.x += 0.25 * (1 - t);
+        ballMesh.position.set(x, y, z);
+
+        if (t < 1) {
+          raf = requestAnimationFrame(step);
+        } else {
+          raf = null;
+          onComplete();
+        }
+      };
+      raf = requestAnimationFrame(step);
+      return;
+    }
+
+    // ─── 4. BAT CONTACT: Outfield Shot Trajectories ─────────────────────────────
     const targetDir = shotDir || 'straight';
     let targetRuns: '1' | '2' | '4' | '6' = '1';
     if (outcome === '6') targetRuns = '6';

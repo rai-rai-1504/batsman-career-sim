@@ -10,6 +10,7 @@ import {
   NpcPlayer,
   Player,
   ShotDirection,
+  ShotStrokeType,
   TimingQuality,
   TimingWindowPartition
 } from '../types';
@@ -25,6 +26,7 @@ export interface BallContext {
     windowWidthMs: number;
     timingQuality?: TimingQuality;
     progressRatio?: number;
+    strokeType?: ShotStrokeType;
   };
   isPractice?: boolean;
   deliveryLine?: BallLine;
@@ -225,6 +227,117 @@ export function resolveUserTimingOutcome(
   const [fallbackOutcome] = pool[0];
   const runs = fallbackOutcome === '6' ? 6 : fallbackOutcome === '4' ? 4 : fallbackOutcome === '2' ? 2 : fallbackOutcome === '1' ? 1 : 0;
   return { outcome: fallbackOutcome, runs };
+}
+
+/**
+ * Resolves defense stroke:
+ * - Wicket probability is significantly decreased across all timing tiers.
+ * - All remaining probability results in 0 runs ('dot').
+ * - It never results in runs.
+ */
+export function resolveDefenseOutcome(
+  timing: TimingQuality
+): { outcome: BallOutcome; runs: number } {
+  let normTiming: 'very_early' | 'early' | 'ideal' | 'late' | 'very_late';
+  if (timing === 'ideal' || timing === 'perfect') normTiming = 'ideal';
+  else if (timing === 'very_early') normTiming = 'very_early';
+  else if (timing === 'early') normTiming = 'early';
+  else if (timing === 'late') normTiming = 'late';
+  else if (timing === 'very_late') normTiming = 'very_late';
+  else if (timing === 'good') normTiming = 'ideal';
+  else normTiming = 'very_late';
+
+  // Significantly reduced wicket chances:
+  // ideal: 0% wicket, 100% dot
+  // early: 5% wicket, 95% dot
+  // late: 8% wicket, 92% dot
+  // very_early: 25% wicket, 75% dot
+  // very_late: 30% wicket, 70% dot
+  const wicketChance: Record<'very_early' | 'early' | 'ideal' | 'late' | 'very_late', number> = {
+    ideal: 0.0,
+    early: 0.05,
+    late: 0.08,
+    very_early: 0.25,
+    very_late: 0.30,
+  };
+
+  const roll = Math.random();
+  if (roll < wicketChance[normTiming]) {
+    return { outcome: 'wicket', runs: 0 };
+  }
+  return { outcome: 'dot', runs: 0 };
+}
+
+/**
+ * Determines which batsman animation should be played based on user rules:
+ * 1. Pull shot: short ball (leg, straight/mid, off) hit to leg side -> ALWAYS pull shot regardless of outcome.
+ * 2. Flick shot: ball is in leg (yorker, length) and player hits for 1 or 2 runs -> flick shot.
+ * 3. Defense: down key defense -> defense.
+ * 4. Sweep shot: m + left key -> sweep shot.
+ * 5. Reverse sweep: m + right key -> reverse sweep.
+ * 6. Straight hit (loft): straight hit for 6 runs -> 50% loft, 50% baseball strike.
+ * 7. Straight hit (chip): straight hit for 1-2 runs -> 50% chip, 50% baseball strike.
+ * 8. Straight hit for 4: 33.3% loft, 33.3% chip, 33.4% baseball strike.
+ * 9. Default fallback: baseball strike.
+ */
+export function selectBatterShotAnimation(params: {
+  strokeType?: ShotStrokeType;
+  deliveryLength: BallLength;
+  deliveryLine: BallLine;
+  shotDirection: ShotDirection;
+  outcome: BallOutcome;
+  runs: number;
+}): string {
+  const { strokeType, deliveryLength, deliveryLine, shotDirection, outcome, runs } = params;
+
+  // 1. Pull Shot: Short ball (leg, straight/mid, off) hit to leg side -> plays regardless of outcome
+  if (deliveryLength === 'short' && shotDirection === 'leg') {
+    return 'pull_shot';
+  }
+
+  // 2. Defense
+  if (strokeType === 'defense') {
+    return 'defense';
+  }
+
+  // 3. Sweep
+  if (strokeType === 'sweep') {
+    return 'sweep_shot';
+  }
+
+  // 4. Reverse Sweep
+  if (strokeType === 'reverse_sweep') {
+    return 'reverse_sweep';
+  }
+
+  // 5. Flick Shot: ball is in the leg (yorker, length) and player hits for 1 or 2 runs
+  const isLegLine = deliveryLine === 'leg';
+  const isYorkerOrLength = deliveryLength === 'yorker' || deliveryLength === 'length';
+  if (isLegLine && isYorkerOrLength && (runs === 1 || runs === 2) && outcome !== 'wicket') {
+    return 'flick_shot';
+  }
+
+  // 6. Straight hits:
+  if (shotDirection === 'straight' && outcome !== 'wicket') {
+    // 6 runs: 50-50 loft or baseball strike
+    if (outcome === '6' || runs === 6) {
+      return Math.random() < 0.5 ? 'straight_hit_loft' : 'baseball_strike';
+    }
+    // 1-2 runs: 50-50 chip or baseball strike
+    if (runs === 1 || runs === 2) {
+      return Math.random() < 0.5 ? 'straight_hit_chip' : 'baseball_strike';
+    }
+    // 4 runs: 33-33-33 loft, chip, baseball strike
+    if (outcome === '4' || runs === 4) {
+      const r = Math.random();
+      if (r < 0.333) return 'straight_hit_loft';
+      if (r < 0.666) return 'straight_hit_chip';
+      return 'baseball_strike';
+    }
+  }
+
+  // Fallback
+  return 'baseball_strike';
 }
 
 /**
@@ -527,8 +640,25 @@ export function simulateBall(
       }
     }
 
-    // Exact probability resolution based on timing quality and bowling line
-    const { outcome: rawOutcome, runs } = resolveUserTimingOutcome(timingQuality, line);
+    const strokeType = userInput?.strokeType || 'standard';
+    let rawOutcome: BallOutcome;
+    let runs: number;
+
+    if (strokeType === 'defense') {
+      // Forward Defense: significantly decreased wicket probability, always 0 runs
+      const defRes = resolveDefenseOutcome(timingQuality);
+      rawOutcome = defRes.outcome;
+      runs = defRes.runs;
+    } else if ((strokeType === 'sweep' || strokeType === 'reverse_sweep') && length === 'short') {
+      // Sweep and reverse sweep against short ball ALWAYS result in a dot ball
+      rawOutcome = 'dot';
+      runs = 0;
+    } else {
+      // Exact probability resolution based on timing quality and bowling line
+      const res = resolveUserTimingOutcome(timingQuality, line);
+      rawOutcome = res.outcome;
+      runs = res.runs;
+    }
 
     let dismissalType: DismissalType | undefined;
     if (rawOutcome === 'wicket') {
@@ -545,6 +675,15 @@ export function simulateBall(
     }
 
     const outcome: BallOutcome = rawOutcome;
+    const shotAnimName = selectBatterShotAnimation({
+      strokeType,
+      deliveryLength: length,
+      deliveryLine: line,
+      shotDirection,
+      outcome,
+      runs,
+    });
+
     const bowlerCat: BowlerCategory =
       bowler.bowlerCategory ||
       (context.bowlerCategory
@@ -575,6 +714,8 @@ export function simulateBall(
       isUserBall: true,
       timingQuality,
       shotDirection,
+      strokeType,
+      shotAnimName,
       commentary: getCommentary({
         outcome,
         runs,

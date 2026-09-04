@@ -8,6 +8,8 @@ export type BattingHand = 'right' | 'left';
 
 export type ShotDirection = 'leg' | 'straight' | 'off';
 
+export type ShotStrokeType = 'standard' | 'defense' | 'sweep' | 'reverse_sweep';
+
 export type BallLength = 'short' | 'length' | 'yorker';
 
 export type BallLine = 'leg' | 'mid' | 'off' | 'straight';
@@ -106,6 +108,8 @@ export type BallEvent = {
   isUserBall: boolean;
   timingQuality?: TimingQuality;
   shotDirection?: ShotDirection;
+  strokeType?: ShotStrokeType;
+  shotAnimName?: string;
   commentary: string;
 };
 
