@@ -3,6 +3,7 @@ import {
   BallEvent,
   BallLength,
   BallLine,
+  BowlerCategory,
   DeliveryCombination,
   DismissalType,
   Fixture,
@@ -77,6 +78,10 @@ export interface LiveMatchState {
   currentBallLength: BallLength;
   currentBallCombination: DeliveryCombination;
   currentBallSpeed: number; // ms
+  currentBallSpeedKmph: number; // km/h
+  lastBallSpeedKmph: number | null; // for speedometer HUD
+  currentBowlerCategory: BowlerCategory;
+  showSpeedometer: boolean;
   ballReleaseTimestamp: number;
   idealContactTimestamp: number;
   timingWindowMs: number;
@@ -108,6 +113,7 @@ interface MatchActions {
   executeToss: () => void;
   startInnings: (inningsNum: 1 | 2) => void;
   prepareNextBall: () => void;
+  confirmWalkoutAndLoad3D: () => void;
   startBowlerRunup: () => void;
   releaseBall: () => void;
   onDirectionInput: (direction: ShotDirection, timestamp?: number) => void;
@@ -115,7 +121,6 @@ interface MatchActions {
   onBallMissedTimeout: () => void;
   stepSimScoreboardBall: () => void;
   simulateUntilUserTurn: () => void;
-  confirmWalkoutAndLoad3D: () => void;
   finishBallAndAdvance: () => void;
   concludeMatch: () => void;
   resetMatch: () => void;
@@ -150,6 +155,10 @@ const initialMatchState: LiveMatchState = {
   currentBallLength: 'length',
   currentBallCombination: 'length_mid',
   currentBallSpeed: 1000,
+  currentBallSpeedKmph: 110.0,
+  lastBallSpeedKmph: null,
+  currentBowlerCategory: 'medium',
+  showSpeedometer: false,
   ballReleaseTimestamp: 0,
   idealContactTimestamp: 0,
   timingWindowMs: 200,
@@ -328,13 +337,21 @@ export const useMatchStore = create<LiveMatchState & MatchActions>((set, get) =>
     const overNumber = Math.floor(oversFacedBalls / 6);
     const currentBowler = bowlerPool[overNumber % bowlerPool.length];
     const timingWindow = calculateTimingWindow(currentBowler.bowlingSkill);
-    const delivery = generateBallDelivery(currentBowler.bowlingType);
+    const delivery = generateBallDelivery(
+      currentBowler.bowlingType,
+      currentBowler.bowlerCategory,
+      currentBowler.bowlingSkill,
+      currentBowler.basePaceKmph
+    );
 
     set({
       currentBallLine: delivery.line,
       currentBallLength: delivery.length,
       currentBallCombination: delivery.combination,
       currentBallSpeed: delivery.releaseSpeed,
+      currentBallSpeedKmph: delivery.speedKmph,
+      currentBowlerCategory: delivery.bowlerCategory,
+      showSpeedometer: false,
       timingWindowMs: timingWindow,
       hasUserActedOnCurrentBall: false,
       queuedDirection: null,
@@ -404,6 +421,8 @@ export const useMatchStore = create<LiveMatchState & MatchActions>((set, get) =>
       deliveryLine: state.currentBallLine,
       deliveryLength: state.currentBallLength,
       deliveryCombination: state.currentBallCombination,
+      bowlerCategory: state.currentBowlerCategory,
+      speedKmph: state.currentBallSpeedKmph,
       userInput: {
         direction,
         timingOffsetMs: pressTime - state.idealContactTimestamp,
@@ -435,6 +454,8 @@ export const useMatchStore = create<LiveMatchState & MatchActions>((set, get) =>
       pendingShotDirection: null,
       currentTimingQuality: timingQuality,
       currentTimingProgress: progressRatio,
+      lastBallSpeedKmph: state.currentBallSpeedKmph || event.speedKmph || 110,
+      showSpeedometer: true,
       hitStopActive: isHitStop,
       screenShakeIntensity: shake,
       phase: isHitStop ? 'hit_impact' : 'ball_flight',
@@ -475,6 +496,8 @@ export const useMatchStore = create<LiveMatchState & MatchActions>((set, get) =>
       deliveryLine: state.currentBallLine,
       deliveryLength: state.currentBallLength,
       deliveryCombination: state.currentBallCombination,
+      bowlerCategory: state.currentBowlerCategory,
+      speedKmph: state.currentBallSpeedKmph,
       userInput: {
         direction: 'straight',
         timingOffsetMs: 9999,
@@ -495,6 +518,8 @@ export const useMatchStore = create<LiveMatchState & MatchActions>((set, get) =>
       pendingShotDirection: null,
       currentTimingQuality: 'very_late',
       currentTimingProgress: 1.0,
+      lastBallSpeedKmph: state.currentBallSpeedKmph || event.speedKmph || 110,
+      showSpeedometer: true,
       phase: 'ball_flight',
       userBallsFaced: [...state.userBallsFaced, event],
     });

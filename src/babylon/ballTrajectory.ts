@@ -371,11 +371,18 @@ export function createBallTrajectoryController(scene: Scene): BallTrajectoryCont
     const t0 = performance.now();
     let bounced = false;
 
+    // Pace-adaptive physics:
+    // Faster balls (e.g. 480-650ms bolt/fast) spin faster and have flatter zippier trajectories.
+    // Slower balls (e.g. 1150-1240ms slow spin) spin gentler and have looped flight arc.
+    const paceFactor = Math.max(0.7, Math.min(1.85, 1000 / durationMs));
+    const seamSpinRate = 0.30 * paceFactor;
+    const dynamicFlightArcY = flightArcY * (paceFactor < 0.95 ? 1.18 : paceFactor > 1.25 ? 0.88 : 1.0);
+
     const step = (now: number) => {
       const t = Math.min(1, (now - t0) / durationMs);
 
-      // Realistic continuous seam and ball spin
-      ballMesh.rotation.x += 0.32;
+      // Realistic continuous seam and ball spin scaled to bowling pace
+      ballMesh.rotation.x += seamSpinRate;
       ballMesh.rotation.z = (bouncePos.x - startPos.x) * 0.35;
 
       // Ring billboard: keep ring facing the camera with clean gap
@@ -384,7 +391,7 @@ export function createBallTrajectoryController(scene: Scene): BallTrajectoryCont
       }
 
       // UNIFORM CONTINUOUS FORWARD MOTION ALONG Z:
-      // Guarantees every delivery moves forward at the exact same constant pace!
+      // Covers the 18.46m pitch length precisely in durationMs!
       const z = startPos.z + (contactPos.z - startPos.z) * t;
 
       let x: number;
@@ -394,7 +401,7 @@ export function createBallTrajectoryController(scene: Scene): BallTrajectoryCont
         // Phase 1: From Bowler Hand to Turf Pitch
         const s = t / bounceProgress;
         x = startPos.x + (bouncePos.x - startPos.x) * s;
-        y = (1 - s) * startPos.y + s * bouncePos.y + Math.sin(s * Math.PI) * flightArcY;
+        y = (1 - s) * startPos.y + s * bouncePos.y + Math.sin(s * Math.PI) * dynamicFlightArcY;
       } else {
         // Phase 2: Pitch Impact and Rebound to Batsman
         if (!bounced) {

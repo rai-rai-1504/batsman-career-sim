@@ -4,6 +4,7 @@ import { MatchCanvas } from './MatchCanvas';
 import { ScoreboardHUD } from './ScoreboardHUD';
 import { BattingControls } from './BattingControls';
 import { TimingMeter } from './TimingMeter';
+import { SpeedometerHUD } from './SpeedometerHUD';
 import { PreMatchModal } from './PreMatchModal';
 import { PostMatchSummary } from './PostMatchSummary';
 import { BroadcastSimScreen } from './BroadcastSimScreen';
@@ -95,6 +96,7 @@ export const MatchView: React.FC<MatchViewProps> = ({ onExitMatch }) => {
           <MatchCanvas />
           <ScoreboardHUD onPause={() => setIsPaused(true)} />
           <TimingMeter />
+          <SpeedometerHUD />
           <BattingControls />
         </>
       ) : (

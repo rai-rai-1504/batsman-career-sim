@@ -1,4 +1,4 @@
-import { Team, NpcPlayer, BowlingType, BattingHand } from '../types';
+import { Team, NpcPlayer, BowlingType, BowlerCategory, BattingHand } from '../types';
 
 interface TeamSeed {
   id: string;
@@ -139,12 +139,61 @@ export function generateTeamRoster(teamSeed: TeamSeed): NpcPlayer[] {
       bowlingSkill = clamp(teamSeed.overallStrength + 8 + variance2, 45, 99);
     }
 
+    // Specific bowling role assignment for balanced team attacks:
+    // i = 5, 6: All-rounders (pace-medium, spin-off)
+    // i = 7: Strike Express Quick (BOLT: 142-149 km/h)
+    // i = 8: Fast Seamer (FAST: 126-136 km/h)
+    // i = 9: Leg-Spinner (SLOW: 92-98 km/h)
+    // i = 10: Fast/Medium variation (115-138 km/h)
+    let bowlingType: BowlingType = 'pace-medium';
+    let bowlerCategory: BowlerCategory = 'medium';
+    let basePaceKmph = 110;
+
+    if (i === 5) {
+      bowlingType = 'pace-medium';
+      bowlerCategory = 'medium';
+      basePaceKmph = 108 + Math.floor(Math.random() * 8); // 108-115 km/h
+    } else if (i === 6) {
+      bowlingType = 'spin-off';
+      bowlerCategory = 'slow';
+      basePaceKmph = 91 + Math.floor(Math.random() * 7); // 91-97 km/h
+    } else if (i === 7) {
+      bowlingType = 'pace-fast';
+      bowlerCategory = 'bolt';
+      basePaceKmph = 142 + Math.floor(Math.random() * 8); // 142-149 km/h
+    } else if (i === 8) {
+      bowlingType = 'pace-fast';
+      bowlerCategory = 'fast';
+      basePaceKmph = 126 + Math.floor(Math.random() * 11); // 126-136 km/h
+    } else if (i === 9) {
+      bowlingType = 'spin-leg';
+      bowlerCategory = 'slow';
+      basePaceKmph = 92 + Math.floor(Math.random() * 7); // 92-98 km/h
+    } else if (i === 10) {
+      if (Math.random() > 0.5) {
+        bowlingType = 'pace-fast';
+        bowlerCategory = 'fast';
+        basePaceKmph = 130 + Math.floor(Math.random() * 8); // 130-137 km/h
+      } else {
+        bowlingType = 'pace-medium';
+        bowlerCategory = 'medium';
+        basePaceKmph = 112 + Math.floor(Math.random() * 7); // 112-118 km/h
+      }
+    } else {
+      const ptTypes: BowlingType[] = ['spin-off', 'spin-leg', 'pace-medium'];
+      bowlingType = randomChoice(ptTypes);
+      bowlerCategory = bowlingType.startsWith('spin') ? 'slow' : 'medium';
+      basePaceKmph = bowlingType.startsWith('spin') ? 92 : 108;
+    }
+
     squad.push({
       id: `${teamSeed.id}_p_${i + 1}`,
       name,
       battingSkill,
       bowlingSkill,
-      bowlingType: randomChoice(BOWLING_TYPES),
+      bowlingType,
+      bowlerCategory,
+      basePaceKmph,
       battingHand: randomChoice(BATTING_HANDS),
     });
   }

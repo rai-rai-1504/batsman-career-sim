@@ -2,6 +2,8 @@ export type DismissalType = 'bowled' | 'caught' | 'lbw' | 'runOut' | 'stumped';
 
 export type BowlingType = 'pace-fast' | 'pace-medium' | 'spin-off' | 'spin-leg';
 
+export type BowlerCategory = 'slow' | 'medium' | 'fast' | 'bolt';
+
 export type BattingHand = 'right' | 'left';
 
 export type ShotDirection = 'leg' | 'straight' | 'off';
@@ -70,6 +72,8 @@ export type NpcPlayer = {
   battingSkill: number;
   bowlingSkill: number;
   bowlingType: BowlingType;
+  bowlerCategory?: BowlerCategory;
+  basePaceKmph?: number;
   battingHand: BattingHand;
 };
 
@@ -91,6 +95,8 @@ export type BallEvent = {
   batterName: string;
   bowlerName: string;
   bowlerType: BowlingType;
+  bowlerCategory?: BowlerCategory;
+  speedKmph?: number;
   line: BallLine;
   length?: BallLength;
   combination?: DeliveryCombination;

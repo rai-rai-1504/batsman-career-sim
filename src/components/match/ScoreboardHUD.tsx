@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useMatchStore } from '../../state/matchStore';
 import { Pause, Circle, Volume2, Volume1, VolumeX } from 'lucide-react';
 import { soundManager } from '../../audio/soundManager';
+import { getBowlerCategoryBadge } from '../../sim/ballEngine';
 
 interface ScoreboardHUDProps {
   onPause?: () => void;
@@ -39,6 +40,8 @@ export const ScoreboardHUD: React.FC<ScoreboardHUDProps> = ({ onPause }) => {
     lastBallEvent,
     currentBallLine,
     currentBallLength,
+    currentBowlerCategory,
+    lastBallSpeedKmph,
   } = useMatchStore();
 
   if (!battingTeam || !bowlingTeam) return null;
@@ -50,6 +53,7 @@ export const ScoreboardHUD: React.FC<ScoreboardHUDProps> = ({ onPause }) => {
   const striker = lineup[strikerIndex];
   const nonStriker = lineup[nonStrikerIndex];
   const currentBowler = bowlerPool[currentOver % bowlerPool.length];
+  const bowlerBadge = getBowlerCategoryBadge(currentBowler?.bowlerCategory || currentBowlerCategory);
 
   return (
     <div className="absolute inset-0 p-4 pointer-events-none flex flex-col justify-between select-none z-20">
@@ -97,18 +101,30 @@ export const ScoreboardHUD: React.FC<ScoreboardHUDProps> = ({ onPause }) => {
             </div>
           </div>
 
-          {/* Bowler Details */}
+          {/* Bowler Details with Category Badge */}
           <div className="p-2 px-2.5 bg-[#0F172A] flex justify-between items-center text-[11px] text-[#94A3B8]">
-            <span className="font-medium truncate max-w-[130px]">{currentBowler?.name}</span>
+            <div className="flex items-center space-x-1.5 truncate max-w-[170px]">
+              <span className="font-medium text-[#F8FAFC] truncate">{currentBowler?.name}</span>
+              <span className={`text-[9px] font-mono font-black uppercase px-1.5 py-0.5 rounded border ${bowlerBadge.badgeClass}`}>
+                {bowlerBadge.shortLabel}
+              </span>
+            </div>
             <span className="font-mono font-bold text-[#F8FAFC]">0/12 (1.0)</span>
           </div>
 
-          {/* Delivery Line & Length Badge */}
+          {/* Delivery Line, Length & Speed Badge */}
           <div className="p-1.5 px-2.5 bg-[#0B1220] flex justify-between items-center text-[10px] border-t border-[#1E293B]">
             <span className="font-bold uppercase tracking-wider text-[#64748B]">Delivery</span>
-            <span className="font-mono font-bold uppercase px-2 py-0.5 rounded bg-[#1E293B] text-[#38BDF8]">
-              {currentBallLength || 'length'} • {currentBallLine === 'mid' ? '4th stump' : currentBallLine || 'mid'}
-            </span>
+            <div className="flex items-center space-x-1.5">
+              <span className="font-mono font-bold uppercase px-2 py-0.5 rounded bg-[#1E293B] text-[#38BDF8]">
+                {currentBallLength || 'length'} • {currentBallLine === 'mid' ? '4th stump' : currentBallLine || 'mid'}
+              </span>
+              {lastBallSpeedKmph && (
+                <span className="font-mono font-black px-1.5 py-0.5 rounded bg-[#1E293B] text-emerald-400 border border-emerald-500/30">
+                  {lastBallSpeedKmph} km/h
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

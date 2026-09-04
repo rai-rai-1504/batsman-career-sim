@@ -3,6 +3,7 @@ import {
   BallLength,
   BallLine,
   BallOutcome,
+  BowlerCategory,
   BowlingType,
   DeliveryCombination,
   DismissalType,
@@ -29,6 +30,8 @@ export interface BallContext {
   deliveryLine?: BallLine;
   deliveryLength?: BallLength;
   deliveryCombination?: DeliveryCombination;
+  bowlerCategory?: BowlerCategory;
+  speedKmph?: number;
 }
 
 export type SkillLike = {
@@ -236,19 +239,167 @@ export function resolveUserTimingOutcome(
  * - yorker mid
  * - yorker off
  */
-export function generateBallDelivery(bowlerType?: BowlingType): {
+/**
+ * Generates an exact ball speed in km/h based on the bowler's category, baseline, and skill
+ * Categories specified by user:
+ * - slow: 90 - 100 km/h
+ * - medium: 100 - 120 km/h
+ * - fast: 120 - 140 km/h
+ * - bolt: 140 - 150 km/h
+ */
+export function calculateDeliverySpeedKmph(
+  category: BowlerCategory = 'medium',
+  bowlerSkill: number = 50,
+  basePace?: number
+): number {
+  let minSpeed = 100.0;
+  let maxSpeed = 120.0;
+
+  switch (category) {
+    case 'slow':
+      minSpeed = 90.0;
+      maxSpeed = 100.0;
+      break;
+    case 'medium':
+      minSpeed = 100.0;
+      maxSpeed = 120.0;
+      break;
+    case 'fast':
+      minSpeed = 120.0;
+      maxSpeed = 140.0;
+      break;
+    case 'bolt':
+      minSpeed = 140.0;
+      maxSpeed = 150.0;
+      break;
+  }
+
+  const base = basePace && basePace >= minSpeed && basePace <= maxSpeed
+    ? basePace
+    : minSpeed + ((maxSpeed - minSpeed) * (0.25 + (bowlerSkill / 100) * 0.55));
+
+  // Small organic per-ball variation: ±1.8 km/h
+  const variance = (Math.random() * 3.6) - 1.8;
+  const finalSpeed = Math.max(minSpeed, Math.min(maxSpeed, base + variance));
+
+  return parseFloat(finalSpeed.toFixed(1));
+}
+
+/**
+ * Maps speed in km/h (90 to 150) to delivery flight duration in milliseconds
+ * Benchmark: 110 km/h = 1000ms.
+ * Pacing characteristics requested by user:
+ * - 90-95 km/h look almost the same (1240ms -> 1200ms)
+ * - 95-100 km/h look very similar (1200ms -> 1140ms)
+ * - 100-110 km/h: 1140ms -> 1000ms
+ * - 110-120 km/h: 1000ms -> 880ms
+ * - 120-135 km/h: 880ms -> 740ms
+ * - 135-140 km/h: 740ms -> 650ms (noticeably faster)
+ * - 140-145 km/h: 650ms -> 560ms (very sharp difference)
+ * - 145-150 km/h: 560ms -> 480ms (blistering express bolt pace!)
+ */
+export function speedKmphToDurationMs(kmph: number): number {
+  const speed = Math.max(90, Math.min(150, kmph));
+
+  if (speed <= 110) {
+    // 90 km/h = 1240ms, 110 km/h = 1000ms
+    // Linear slope: 240ms over 20 km/h -> 12ms per km/h
+    return Math.round(1240 - (speed - 90) * 12);
+  } else if (speed <= 135) {
+    // 110 km/h = 1000ms, 135 km/h = 740ms
+    // Slope: 260ms over 25 km/h -> 10.4ms per km/h
+    return Math.round(1000 - (speed - 110) * 10.4);
+  } else if (speed <= 140) {
+    // 135 km/h = 740ms, 140 km/h = 650ms (90ms drop over 5 km/h -> 18ms/km/h)
+    return Math.round(740 - (speed - 135) * 18);
+  } else if (speed <= 145) {
+    // 140 km/h = 650ms, 145 km/h = 560ms (90ms drop over 5 km/h -> 18ms/km/h)
+    return Math.round(650 - (speed - 140) * 18);
+  } else {
+    // 145 km/h = 560ms, 150 km/h = 480ms (80ms drop over 5 km/h -> 16ms/km/h)
+    return Math.round(560 - (speed - 145) * 16);
+  }
+}
+
+export function getBowlerCategoryBadge(category: BowlerCategory = 'medium'): {
+  label: string;
+  shortLabel: string;
+  range: string;
+  color: string;
+  badgeClass: string;
+} {
+  switch (category) {
+    case 'slow':
+      return {
+        label: 'Slow',
+        shortLabel: 'SLOW',
+        range: '90-100 KMPH',
+        color: '#38BDF8',
+        badgeClass: 'bg-sky-500/20 text-sky-400 border border-sky-500/40',
+      };
+    case 'medium':
+      return {
+        label: 'Medium',
+        shortLabel: 'MED',
+        range: '100-120 KMPH',
+        color: '#F59E0B',
+        badgeClass: 'bg-amber-500/20 text-amber-400 border border-amber-500/40',
+      };
+    case 'fast':
+      return {
+        label: 'Fast',
+        shortLabel: 'FAST',
+        range: '120-140 KMPH',
+        color: '#F97316',
+        badgeClass: 'bg-orange-500/20 text-orange-400 border border-orange-500/40',
+      };
+    case 'bolt':
+      return {
+        label: '⚡ Bolt',
+        shortLabel: '⚡ BOLT',
+        range: '140-150 KMPH',
+        color: '#EF4444',
+        badgeClass: 'bg-red-500/25 text-red-400 border border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.35)]',
+      };
+  }
+}
+
+/**
+ * Generate a ball delivery with equal 1/9 (11.11%) probability across all 9 combinations:
+ * - short leg, short mid, short off
+ * - length leg, length mid, length off
+ * - yorker leg, yorker mid, yorker off
+ * Pacing is calculated from bowler category and skill!
+ */
+export function generateBallDelivery(
+  bowlerType?: BowlingType,
+  bowlerCategory?: BowlerCategory,
+  bowlerSkill: number = 50,
+  basePaceKmph?: number
+): {
   combination: DeliveryCombination;
   length: BallLength;
   line: BallLine;
-  releaseSpeed: number; // ms to travel to pitch
+  releaseSpeed: number; // ms to travel to pitch & contact
+  speedKmph: number;    // exact ball speed in km/h
+  bowlerCategory: BowlerCategory;
 } {
   // Exactly equal probability (1/9) for each of the 9 combinations
   const combination = ALL_DELIVERY_COMBINATIONS[Math.floor(Math.random() * ALL_DELIVERY_COMBINATIONS.length)];
   const [length, line] = combination.split('_') as [BallLength, BallLine];
 
-  // Constant uniform duration (1000ms) guarantees identical pace and identical needle speed for all deliveries
-  const releaseSpeed = 1000;
-  return { combination, length, line, releaseSpeed };
+  // Derive bowler category if not explicitly provided
+  let cat: BowlerCategory = bowlerCategory || 'medium';
+  if (!bowlerCategory && bowlerType) {
+    if (bowlerType.startsWith('spin')) cat = 'slow';
+    else if (bowlerType === 'pace-fast') cat = bowlerSkill >= 80 ? 'bolt' : 'fast';
+    else cat = 'medium';
+  }
+
+  const speedKmph = calculateDeliverySpeedKmph(cat, bowlerSkill, basePaceKmph);
+  const releaseSpeed = speedKmphToDurationMs(speedKmph);
+
+  return { combination, length, line, releaseSpeed, speedKmph, bowlerCategory: cat };
 }
 
 /**
@@ -397,6 +548,18 @@ export function simulateBall(
     }
 
     const outcome: BallOutcome = rawOutcome;
+    const bowlerCat: BowlerCategory =
+      bowler.bowlerCategory ||
+      (context.bowlerCategory
+        ? context.bowlerCategory
+        : bowler.bowlingType.startsWith('spin')
+        ? 'slow'
+        : bowler.bowlingType === 'pace-fast' && bowler.bowlingSkill >= 80
+        ? 'bolt'
+        : bowler.bowlingType === 'pace-fast'
+        ? 'fast'
+        : 'medium');
+    const ballSpeed = context.speedKmph || calculateDeliverySpeedKmph(bowlerCat, bowler.bowlingSkill, bowler.basePaceKmph);
 
     return {
       over,
@@ -404,6 +567,8 @@ export function simulateBall(
       batterName: batter.name,
       bowlerName: bowler.name,
       bowlerType: bowler.bowlingType,
+      bowlerCategory: bowlerCat,
+      speedKmph: ballSpeed,
       line,
       length,
       combination,
@@ -467,12 +632,25 @@ export function simulateBall(
     else dismissalType = 'stumped';
   }
 
+  const npcBowlerCat: BowlerCategory =
+    bowler.bowlerCategory ||
+    (bowler.bowlingType.startsWith('spin')
+      ? 'slow'
+      : bowler.bowlingType === 'pace-fast' && bowler.bowlingSkill >= 80
+      ? 'bolt'
+      : bowler.bowlingType === 'pace-fast'
+      ? 'fast'
+      : 'medium');
+  const npcBallSpeed = calculateDeliverySpeedKmph(npcBowlerCat, bowler.bowlingSkill, bowler.basePaceKmph);
+
   return {
     over,
     ballInOver,
     batterName: batter.name,
     bowlerName: bowler.name,
     bowlerType: bowler.bowlingType,
+    bowlerCategory: npcBowlerCat,
+    speedKmph: npcBallSpeed,
     line,
     length,
     combination,

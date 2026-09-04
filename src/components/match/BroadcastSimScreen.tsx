@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useMatchStore } from '../../state/matchStore';
 import { Play, FastForward, Sparkles, Trophy, Zap, Shield, ArrowRight, Activity, Flame } from 'lucide-react';
 import { soundManager } from '../../audio/soundManager';
+import { getBowlerCategoryBadge } from '../../sim/ballEngine';
 
 export const BroadcastSimScreen: React.FC = () => {
   const {
@@ -36,6 +37,7 @@ export const BroadcastSimScreen: React.FC = () => {
   const ballsInCurrentOver = oversFacedBalls % 6;
   const oversFormatted = `${currentOver}.${ballsInCurrentOver}`;
   const currentBowler = bowlerPool[currentOver % bowlerPool.length];
+  const bowlerBadge = getBowlerCategoryBadge(currentBowler?.bowlerCategory || 'medium');
 
   const currentRunRate =
     oversFacedBalls > 0 ? ((totalRuns / oversFacedBalls) * 6).toFixed(2) : '0.00';
@@ -220,8 +222,11 @@ export const BroadcastSimScreen: React.FC = () => {
 
               <div className="bg-[#0B1220] p-3 rounded-xl border border-[#23304E] flex justify-between items-center">
                 <div>
-                  <div className="font-extrabold text-xs text-[#F5F7FA]">
-                    {currentBowler?.name || 'Bowler'}
+                  <div className="font-extrabold text-xs text-[#F5F7FA] flex items-center space-x-1.5">
+                    <span>{currentBowler?.name || 'Bowler'}</span>
+                    <span className={`text-[9px] font-mono font-black uppercase px-1.5 py-0.5 rounded border ${bowlerBadge.badgeClass}`}>
+                      {bowlerBadge.shortLabel}
+                    </span>
                   </div>
                   <div className="text-[10px] text-[#00D4A5] capitalize">
                     {currentBowler?.bowlingType.replace('-', ' ')} • Skill: {currentBowler?.bowlingSkill}
