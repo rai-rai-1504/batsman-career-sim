@@ -132,13 +132,27 @@ export const TIMING_PARTITIONS: Record<DeliveryCombination, TimingWindowPartitio
 };
 
 /**
+ * Dedicated early timing partitions for pre-meditated sweep and reverse sweep.
+ * Batsman commits early while ball is pitching (0.48 - 0.72) to execute kneeling posture.
+ */
+export const SWEEP_TIMING_PARTITIONS: TimingWindowPartition = {
+  veryEarlyEnd: 0.30,
+  earlyEnd: 0.48,
+  idealEnd: 0.72,
+  lateEnd: 0.84,
+};
+
+/**
  * Grade timing from normalized flight progress (0.0 to 1.0)
  */
 export function gradeDeliveryTiming(
   progressRatio: number,
-  combination: DeliveryCombination = 'length_mid'
+  combination: DeliveryCombination = 'length_mid',
+  strokeType?: ShotStrokeType
 ): TimingQuality {
-  const p = TIMING_PARTITIONS[combination] || TIMING_PARTITIONS.length_mid;
+  const p = (strokeType === 'sweep' || strokeType === 'reverse_sweep')
+    ? SWEEP_TIMING_PARTITIONS
+    : (TIMING_PARTITIONS[combination] || TIMING_PARTITIONS.length_mid);
   const u = clamp(progressRatio, 0, 1);
   if (u < p.veryEarlyEnd) return 'very_early';
   if (u < p.earlyEnd) return 'early';
@@ -633,7 +647,7 @@ export function simulateBall(
       if (userInput.timingQuality) {
         timingQuality = userInput.timingQuality;
       } else if (userInput.progressRatio !== undefined) {
-        timingQuality = gradeDeliveryTiming(userInput.progressRatio, combination);
+        timingQuality = gradeDeliveryTiming(userInput.progressRatio, combination, userInput.strokeType);
       } else {
         const absOffset = Math.abs(userInput.timingOffsetMs);
         timingQuality = gradeTiming(absOffset, userInput.windowWidthMs, userInput.timingOffsetMs);

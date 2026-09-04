@@ -186,23 +186,26 @@ export async function playBatterShotAnimation(
   if (!isRigAlive(batterRig)) return;
   try {
     const baseRotY = Math.PI;
+    const selectedAnim = animName || 'baseball_strike';
+
     // Directional stance swivel during the stroke:
-    // leg: pull/swivel toward leg side (left)
-    // off: step out / cut toward off side (right)
-    // straight: stay square down the ground in the V
-    const targetRotY = direction === 'leg' ? baseRotY - 0.28
-                     : direction === 'off' ? baseRotY + 0.28
+    // pull_shot: keep batsman firmly planted where he is standing (no swivel or translation displacement)
+    // leg: swivel toward leg side (-X)
+    // off: step out / cut toward off side (+X)
+    const targetRotY = selectedAnim === 'pull_shot' ? baseRotY
+                     : direction === 'leg' ? baseRotY + 0.28
+                     : direction === 'off' ? baseRotY - 0.28
                      : baseRotY;
 
     if (batterRig.root && batterRig.root.rotation) {
       batterRig.root.rotation.y = targetRotY;
     }
 
-    const selectedAnim = animName || 'baseball_strike';
     let shotGroup: any = null;
 
     if (selectedAnim === 'pull_shot') {
-      shotGroup = await batterRig.playAnimation('pull_shot', false, 1.15);
+      // Much faster, explosive pull shot execution (2.5x)
+      shotGroup = await batterRig.playAnimation('pull_shot', false, 2.5);
     } else if (selectedAnim === 'flick_shot') {
       shotGroup = await batterRig.playAnimation('flick_shot', false, 1.25);
     } else if (selectedAnim === 'defense') {
@@ -227,8 +230,9 @@ export async function playBatterShotAnimation(
 
     const restoreStance = () => {
       if (isRigAlive(batterRig)) {
-        if (batterRig.root && batterRig.root.rotation) {
-          batterRig.root.rotation.y = baseRotY;
+        if (batterRig.root) {
+          if (batterRig.root.rotation) batterRig.root.rotation.y = baseRotY;
+          if (batterRig.root.scaling) batterRig.root.scaling.x = -1;
         }
         batterRig.playAnimation('new_batsman_idle', true);
       }
@@ -272,8 +276,9 @@ export function playShotAnimation(
 
 export function resetBattingStance(batterRig: PlayerCharacterRig) {
   if (isRigAlive(batterRig)) {
-    if (batterRig.root && batterRig.root.rotation) {
-      batterRig.root.rotation.y = Math.PI;
+    if (batterRig.root) {
+      if (batterRig.root.rotation) batterRig.root.rotation.y = Math.PI;
+      if (batterRig.root.scaling) batterRig.root.scaling.x = -1;
     }
     batterRig.playAnimation('new_batsman_idle', true);
   }
@@ -284,7 +289,10 @@ export function playAppealAnimation(rig: PlayerCharacterRig, _durationMs: number
 }
 
 export function playCelebrateAnimation(rig: PlayerCharacterRig, _durationMs: number = 1400) {
-  if (isRigAlive(rig)) rig.playAnimation('standing_idle', true);
+  // Only play celebratory standing idle on fielders/bowler; NEVER cut off batter's shot!
+  if (!rig.isBatter && isRigAlive(rig)) {
+    rig.playAnimation('standing_idle', true);
+  }
 }
 
 // Cache of original un-shattered rest poses for stumps & bails

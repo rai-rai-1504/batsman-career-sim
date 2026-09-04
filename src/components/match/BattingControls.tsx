@@ -53,7 +53,7 @@ export const BattingControls: React.FC = () => {
           <kbd className="px-2 py-0.5 bg-[#1B243B] text-[#EC4899] border border-[#23304E] rounded font-bold font-mono text-[11px]">
             M + ←/→
           </kbd>
-          <span>Sweep / Rev</span>
+          <span>Sweep / Rev (Early)</span>
         </div>
 
         <div className="w-1 h-1 rounded-full bg-[#23304E]" />

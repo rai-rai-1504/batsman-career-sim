@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useMatchStore } from '../../state/matchStore';
-import { TIMING_PARTITIONS } from '../../sim/ballEngine';
+import { TIMING_PARTITIONS, SWEEP_TIMING_PARTITIONS } from '../../sim/ballEngine';
 import { Sparkles, Target } from 'lucide-react';
 
 export const TimingMeter: React.FC = () => {
@@ -15,11 +15,30 @@ export const TimingMeter: React.FC = () => {
   const currentTimingProgress = useMatchStore((s) => s.currentTimingProgress);
 
   const [liveProgress, setLiveProgress] = useState<number>(0);
+  const [isHoldingM, setIsHoldingM] = useState<boolean>(false);
   const rafRef = useRef<number | null>(null);
 
-  // Active delivery partition
+  // Active delivery partition (adapts to sweep window when M key is held)
   const combKey = currentBallCombination || 'length_mid';
-  const partition = TIMING_PARTITIONS[combKey] || TIMING_PARTITIONS.length_mid;
+  const partition = isHoldingM
+    ? SWEEP_TIMING_PARTITIONS
+    : (TIMING_PARTITIONS[combKey] || TIMING_PARTITIONS.length_mid);
+
+  // Keyboard listener for M key to show sweep early timing window
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'm') setIsHoldingM(true);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'm') setIsHoldingM(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   // Real-time animation loop when ball is in flight
   useEffect(() => {
@@ -83,12 +102,14 @@ export const TimingMeter: React.FC = () => {
       <div className="bg-[#0B132B]/90 backdrop-blur-md border border-[#1E3A8A]/70 rounded-2xl p-3 shadow-[0_10px_35px_rgba(0,0,0,0.6)] flex flex-col items-center w-24">
         {/* Header Badge */}
         <div className="text-center mb-2 w-full">
-          <div className="flex items-center justify-center space-x-1 text-[10px] font-black tracking-widest text-[#38BDF8] uppercase">
-            <Target className="w-3 h-3 text-[#38BDF8]" />
-            <span>TIMING</span>
+          <div className="flex items-center justify-center space-x-1 text-[10px] font-black tracking-widest uppercase">
+            <Target className={`w-3 h-3 ${isHoldingM ? 'text-[#EC4899]' : 'text-[#38BDF8]'}`} />
+            <span className={isHoldingM ? 'text-[#EC4899]' : 'text-[#38BDF8]'}>
+              {isHoldingM ? 'SWEEP' : 'TIMING'}
+            </span>
           </div>
           <div className="text-[9px] font-mono font-bold uppercase text-[#94A3B8] truncate">
-            {currentBallLength} • {currentBallLine === 'mid' ? '4th' : currentBallLine}
+            {isHoldingM ? 'EARLY WINDOW' : `${currentBallLength} • ${currentBallLine === 'mid' ? '4th' : currentBallLine}`}
           </div>
         </div>
 

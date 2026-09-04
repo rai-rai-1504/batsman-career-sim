@@ -136,6 +136,13 @@ export function playRetargetedAnimation(
   animTemplate.targetedAnimations.forEach(ta => {
     const targetName = ta.target?.name ?? '';
     const cleanName = targetName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // For pull shot: do not apply root motion translation to Hips
+    // Prevents the batsman from jumping / shifting away from the crease while swing plays in full
+    if (animName === 'pull_shot' && cleanName.includes('hips') && ta.animation.targetProperty === 'position') {
+      return;
+    }
+
     const nodeMatch = rig.allTransformNodes.find(tn => {
       const cleanTn = tn.name.toLowerCase().replace(/[^a-z0-9]/g, '');
       return cleanTn === cleanName || cleanTn.endsWith(cleanName) || cleanTn.includes(cleanName);
@@ -281,6 +288,9 @@ export async function loadCharacter(
     m.alwaysSelectAsActiveMesh = true;
     m.computeBonesUsingShaders = true;
     m.receiveShadows = true;
+    if (m.material) {
+      m.material.backFaceCulling = false;
+    }
     if (options?.shadowGenerator && m !== rootMesh) {
       options.shadowGenerator.addShadowCaster(m, true);
     }
@@ -376,11 +386,13 @@ export async function loadCharacter(
     }
   }
 
-  // Step 6 — Facing direction
+  // Step 6 — Facing direction & lateral inversion for batter
   if (options?.isBatter) {
     rootMesh.rotationQuaternion = null;
     // Right-handed batsman: stand side-on, left shoulder pointing toward bowler (+Z)
     rootMesh.rotation.y = Math.PI;
+    // Laterally invert the batsman so his stance is right-handed (back to camera/leg side, bat on off-side)
+    rootMesh.scaling.x = -1;
   } else if (options?.isBowler) {
     rootMesh.rotationQuaternion = null;
     // Bowler at Z=28 must face toward batsman at Z=-8.8 (face -Z direction = Math.PI)

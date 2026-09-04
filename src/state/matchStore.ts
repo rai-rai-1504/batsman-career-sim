@@ -409,7 +409,7 @@ export const useMatchStore = create<LiveMatchState & MatchActions>((set, get) =>
     const totalFlightMs = state.currentBallSpeed || 1000;
     const elapsedMs = Math.max(0, pressTime - state.ballReleaseTimestamp);
     const progressRatio = Math.max(0, Math.min(1, elapsedMs / totalFlightMs));
-    const timingQuality = gradeDeliveryTiming(progressRatio, state.currentBallCombination);
+    const timingQuality = gradeDeliveryTiming(progressRatio, state.currentBallCombination, strokeType);
 
     const currentBowler = state.bowlerPool[Math.floor(state.oversFacedBalls / 6) % state.bowlerPool.length];
     const overNum = Math.floor(state.oversFacedBalls / 6);
@@ -434,6 +434,29 @@ export const useMatchStore = create<LiveMatchState & MatchActions>((set, get) =>
       },
     });
 
+    const isEarlySweep = (strokeType === 'sweep' || strokeType === 'reverse_sweep') && progressRatio < 0.82;
+
+    if (isEarlySweep) {
+      // Pre-meditated early sweep/reverse sweep:
+      // Meter freezes at user input timing, speed displays, and MatchCanvas immediately triggers sweep posture!
+      // Delivery ball continues its authentic flight to contact point where executeContactImpact() launches the shot.
+      set({
+        hasUserActedOnCurrentBall: true,
+        lastBallEvent: event,
+        pendingShotEvent: null,
+        pendingShotDirection: null,
+        currentTimingQuality: timingQuality,
+        currentTimingProgress: progressRatio,
+        lastBallSpeedKmph: state.currentBallSpeedKmph || event.speedKmph || 110,
+        showSpeedometer: true,
+        hitStopActive: false,
+        screenShakeIntensity: 0,
+        phase: 'ball_active',
+        userBallsFaced: [...state.userBallsFaced, event],
+      });
+      return;
+    }
+
     if (event.outcome === '6') {
       soundManager.playBatCrack('huge');
     } else if (event.outcome === '4') {
@@ -447,7 +470,7 @@ export const useMatchStore = create<LiveMatchState & MatchActions>((set, get) =>
     const isHitStop = (timingQuality === 'ideal' || event.timingQuality === 'perfect') && (event.outcome === '6' || event.outcome === '4');
     const shake = event.outcome === '6' ? 1.0 : event.outcome === '4' ? 0.6 : 0;
 
-    // Instant bat contact when key is pressed:
+    // Instant bat contact when key is pressed at contact:
     // Meter freezes at exact progressRatio, sound plays, and ball launches off bat!
     set({
       hasUserActedOnCurrentBall: true,
@@ -472,11 +495,44 @@ export const useMatchStore = create<LiveMatchState & MatchActions>((set, get) =>
   },
 
   /**
-   * Called when ball reaches the batsman without user input (timeout / leave)
+   * Called when ball reaches the batsman (contact point)
    */
   executeContactImpact: () => {
     const state = get();
     if (state.phase !== 'ball_active') return;
+
+    if (state.hasUserActedOnCurrentBall && state.lastBallEvent) {
+      const event = state.lastBallEvent;
+      const strokeType = event.strokeType;
+      const timingQuality = state.currentTimingQuality;
+
+      if (event.outcome === '6') {
+        soundManager.playBatCrack('huge');
+      } else if (event.outcome === '4') {
+        soundManager.playBatCrack('medium');
+      } else if (event.outcome === 'wicket') {
+        soundManager.playWicketSound();
+      } else if (event.runs > 0 || strokeType === 'defense') {
+        soundManager.playBatCrack('soft');
+      }
+
+      const isHitStop = (timingQuality === 'ideal' || event.timingQuality === 'perfect') && (event.outcome === '6' || event.outcome === '4');
+      const shake = event.outcome === '6' ? 1.0 : event.outcome === '4' ? 0.6 : 0;
+
+      set({
+        hitStopActive: isHitStop,
+        screenShakeIntensity: shake,
+        phase: isHitStop ? 'hit_impact' : 'ball_flight',
+      });
+
+      if (isHitStop) {
+        setTimeout(() => {
+          set({ hitStopActive: false, phase: 'ball_flight' });
+        }, 90);
+      }
+      return;
+    }
+
     get().onBallMissedTimeout();
   },
 

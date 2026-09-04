@@ -52,6 +52,7 @@ export const MatchCanvas: React.FC = () => {
   const stumpsRef = useRef<any>(null);
   const stopIdleRef = useRef<(() => void) | null>(null);
   const shotPlayedRef = useRef(false);
+  const isShotPlayingRef = useRef(false);
   // Single source of truth for whether this scene instance is alive
   const aliveRef = useRef<{ dead: boolean }>({ dead: false });
 
@@ -182,14 +183,41 @@ export const MatchCanvas: React.FC = () => {
     if (!cameraRigRef.current || !ballCtrlRef.current) return;
     if (aliveRef.current.dead) return;
 
+    const triggerBatterShot = () => {
+      if (!shotPlayedRef.current && batterRigRef.current && lastBallEvent && lastBallEvent.isUserBall) {
+        shotPlayedRef.current = true;
+        isShotPlayingRef.current = true;
+        const animToPlay =
+          lastBallEvent.outcome === 'wicket' &&
+          lastBallEvent.shotAnimName !== 'pull_shot' &&
+          lastBallEvent.shotAnimName !== 'defense'
+            ? 'batsman_out'
+            : lastBallEvent.shotAnimName;
+        playShotAnimation(
+          batterRigRef.current,
+          lastBallEvent.shotDirection || 'straight',
+          340,
+          () => {
+            isShotPlayingRef.current = false;
+          },
+          animToPlay
+        );
+      }
+    };
+
     if (phase === 'ready') {
       shotPlayedRef.current = false;
       cameraRigRef.current.setMode('batting');
       ballCtrlRef.current.resetToBowler();
       if (stumpsRef.current) resetStumps(stumpsRef.current);
-      if (batterRigRef.current) resetBattingStance(batterRigRef.current);
+      // ONLY reset batting stance if shot animation is not still playing follow-through
+      if (!isShotPlayingRef.current && batterRigRef.current) {
+        resetBattingStance(batterRigRef.current);
+      }
     } else if (phase === 'bowling_runup') {
       shotPlayedRef.current = false;
+      isShotPlayingRef.current = false;
+      if (batterRigRef.current) resetBattingStance(batterRigRef.current);
       if (!bowlerRigRef.current) return;
       cameraRigRef.current.setMode('batting');
       ballCtrlRef.current.resetToBowler();
@@ -202,7 +230,6 @@ export const MatchCanvas: React.FC = () => {
         }
       });
     } else if (phase === 'ball_active') {
-      shotPlayedRef.current = false;
       cameraRigRef.current.setMode('batting');
       ballCtrlRef.current.animateDeliveryCombination(
         currentBallCombination || 'length_mid',
@@ -210,54 +237,28 @@ export const MatchCanvas: React.FC = () => {
         () => {},
         () => { if (!aliveRef.current.dead) executeContactImpact(); }
       );
+      // If user initiated an early shot (sweep / reverse sweep), start posture immediately!
+      if (lastBallEvent && lastBallEvent.isUserBall) {
+        triggerBatterShot();
+      }
     } else if (phase === 'hit_impact') {
       if (lastBallEvent) {
         cameraRigRef.current.triggerScreenShake(screenShakeIntensity);
-        if (!shotPlayedRef.current && batterRigRef.current && lastBallEvent.isUserBall) {
-          shotPlayedRef.current = true;
-          const animToPlay =
-            lastBallEvent.outcome === 'wicket' &&
-            lastBallEvent.shotAnimName !== 'pull_shot' &&
-            lastBallEvent.shotAnimName !== 'defense'
-              ? 'batsman_out'
-              : lastBallEvent.shotAnimName;
-          playShotAnimation(
-            batterRigRef.current,
-            lastBallEvent.shotDirection || 'straight',
-            340,
-            undefined,
-            animToPlay
-          );
-        }
+        triggerBatterShot();
       }
     } else if (phase === 'ball_flight') {
       if (lastBallEvent) {
         if (lastBallEvent.outcome === '6' || lastBallEvent.outcome === '4') {
           soundManager.playCrowdCheer(lastBallEvent.outcome === '6');
           cameraRigRef.current.triggerScreenShake(screenShakeIntensity);
-          if (batterRigRef.current) playCelebrateAnimation(batterRigRef.current, 1400);
+          // Batter plays out full stroke and follow-through; do not interrupt with celebrate
         } else if (lastBallEvent.outcome === 'wicket') {
           if (bowlerRigRef.current) playAppealAnimation(bowlerRigRef.current, 1200);
           fieldersRef.current.forEach((f) => playAppealAnimation(f, 1200));
         }
 
-        // Trigger stroke once if not already fired during hit_impact
-        if (!shotPlayedRef.current && batterRigRef.current && lastBallEvent.isUserBall) {
-          shotPlayedRef.current = true;
-          const animToPlay =
-            lastBallEvent.outcome === 'wicket' &&
-            lastBallEvent.shotAnimName !== 'pull_shot' &&
-            lastBallEvent.shotAnimName !== 'defense'
-              ? 'batsman_out'
-              : lastBallEvent.shotAnimName;
-          playShotAnimation(
-            batterRigRef.current,
-            lastBallEvent.shotDirection || 'straight',
-            340,
-            undefined,
-            animToPlay
-          );
-        }
+        // Trigger stroke if not already fired
+        triggerBatterShot();
 
         const isPlayAndMiss =
           lastBallEvent.outcome === 'dot' &&
@@ -274,7 +275,7 @@ export const MatchCanvas: React.FC = () => {
               if (!aliveRef.current.dead) {
                 setTimeout(() => {
                   if (!aliveRef.current.dead) finishBallAndAdvance();
-                }, 650);
+                }, 750);
               }
             },
             lastBallEvent.dismissalType,
