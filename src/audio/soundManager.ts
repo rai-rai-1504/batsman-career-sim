@@ -509,19 +509,54 @@ class SoundManager {
     if (!ctx || !this.masterGain || this.isMuted || this.volume === 0) return;
     const now = ctx.currentTime;
 
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(320, now);
-    osc.frequency.exponentialRampToValueAtTime(80, now + 0.25);
+    // 1. Primary hard leather-on-timber crack (high-energy wood impact)
+    const crackOsc = ctx.createOscillator();
+    const crackGain = ctx.createGain();
+    crackOsc.type = 'triangle';
+    crackOsc.frequency.setValueAtTime(1600, now);
+    crackOsc.frequency.exponentialRampToValueAtTime(320, now + 0.04);
+    crackGain.gain.setValueAtTime(0.85 * this.volume, now);
+    crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    crackOsc.connect(crackGain);
+    crackGain.connect(this.masterGain);
+    crackOsc.start(now);
+    crackOsc.stop(now + 0.06);
 
-    gain.gain.setValueAtTime(0.4, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    // 2. Heavy hollow stump body thump
+    const thumpOsc = ctx.createOscillator();
+    const thumpGain = ctx.createGain();
+    thumpOsc.type = 'sine';
+    thumpOsc.frequency.setValueAtTime(240, now);
+    thumpOsc.frequency.exponentialRampToValueAtTime(65, now + 0.14);
+    thumpGain.gain.setValueAtTime(0.70 * this.volume, now);
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    thumpOsc.connect(thumpGain);
+    thumpGain.connect(this.masterGain);
+    thumpOsc.start(now);
+    thumpOsc.stop(now + 0.18);
 
-    osc.connect(gain);
-    gain.connect(this.masterGain);
-    osc.start(now);
-    osc.stop(now + 0.26);
+    // 3. Secondary wood clatter & bail rattle (tumbling wooden harmonics)
+    const taps = [
+      { t: 0.035, f: 920, dur: 0.04, vol: 0.45 },
+      { t: 0.080, f: 1350, dur: 0.03, vol: 0.35 },
+      { t: 0.140, f: 780, dur: 0.05, vol: 0.30 },
+      { t: 0.210, f: 1100, dur: 0.03, vol: 0.22 },
+    ];
+
+    taps.forEach((tap) => {
+      const tapOsc = ctx.createOscillator();
+      const tapGain = ctx.createGain();
+      tapOsc.type = 'sine';
+      tapOsc.frequency.setValueAtTime(tap.f, now + tap.t);
+      tapOsc.frequency.exponentialRampToValueAtTime(tap.f * 0.4, now + tap.t + tap.dur);
+      tapGain.gain.setValueAtTime(0.001, now);
+      tapGain.gain.setValueAtTime(tap.vol * this.volume, now + tap.t);
+      tapGain.gain.exponentialRampToValueAtTime(0.001, now + tap.t + tap.dur);
+      tapOsc.connect(tapGain);
+      tapGain.connect(this.masterGain!);
+      tapOsc.start(now + tap.t);
+      tapOsc.stop(now + tap.t + tap.dur + 0.01);
+    });
   }
 
   // ─── 5. Menu sounds — Strictly SILENT per user instruction ───────────────────

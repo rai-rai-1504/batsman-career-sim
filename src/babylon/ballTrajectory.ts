@@ -10,8 +10,9 @@ import {
   ParticleSystem,
   DynamicTexture,
 } from '@babylonjs/core';
-import { BallLength, BallLine, BallOutcome, DeliveryCombination, ShotDirection } from '../types';
+import { BallLength, BallLine, BallOutcome, DeliveryCombination, DismissalType, ShotDirection } from '../types';
 import { soundManager } from '../audio/soundManager';
+import { playWicketShatterAnimation } from './animations';
 
 /**
  * Procedural high-detail texture for an authentic "Red Cherry" cricket ball:
@@ -135,7 +136,10 @@ export interface BallTrajectoryController {
   animateShot: (
     outcome: BallOutcome,
     shotDir: ShotDirection,
-    onComplete: () => void
+    onComplete: () => void,
+    dismissalType?: DismissalType,
+    stumpsGroup?: any,
+    isPlayAndMiss?: boolean
   ) => void;
   stop: () => void;
 }
@@ -548,14 +552,98 @@ export function createBallTrajectoryController(scene: Scene): BallTrajectoryCont
   const animateShot = (
     outcome: BallOutcome,
     shotDir: ShotDirection,
-    onComplete: () => void
+    onComplete: () => void,
+    dismissalType?: DismissalType,
+    stumpsGroup?: any,
+    isPlayAndMiss?: boolean
   ) => {
     if (raf !== null) { cancelAnimationFrame(raf); }
     ringMesh.isVisible = false;
 
     const startPos = ballMesh.position.clone();
 
-    // 1. Select matching trajectory from the 60 defined animations
+    // ─── 1. BOWLED DISMISSAL: Ball smashes directly into stumps! ───────────────
+    const isBowled = outcome === 'wicket' && (dismissalType === 'bowled' || !dismissalType);
+    if (isBowled) {
+      const stumpImpactPos = new Vector3(0.0, 0.40, -10.06);
+      const stumpReboundPos = new Vector3(0.35, 0.08, -13.2);
+      const dur = 550;
+      const impactFraction = 0.36; // ball hits stumps at 36% of flight (~200ms)
+      let hitStumpsTriggered = false;
+
+      const t0 = performance.now();
+      const step = (now: number) => {
+        const elapsed = now - t0;
+        const t = Math.min(1, elapsed / dur);
+
+        let x: number;
+        let y: number;
+        let z: number;
+
+        if (t < impactFraction) {
+          const s = t / impactFraction;
+          x = startPos.x + (stumpImpactPos.x - startPos.x) * s;
+          y = startPos.y + (stumpImpactPos.y - startPos.y) * s;
+          z = startPos.z + (stumpImpactPos.z - startPos.z) * s;
+        } else {
+          if (!hitStumpsTriggered) {
+            hitStumpsTriggered = true;
+            soundManager.playWicketSound();
+            if (stumpsGroup) {
+              playWicketShatterAnimation(stumpsGroup);
+            }
+          }
+          const s = (t - impactFraction) / (1 - impactFraction);
+          x = stumpImpactPos.x + (stumpReboundPos.x - stumpImpactPos.x) * s;
+          z = stumpImpactPos.z + (stumpReboundPos.z - stumpImpactPos.z) * s;
+          y = Math.max(0.08, (1 - s) * stumpImpactPos.y + s * stumpReboundPos.y);
+        }
+
+        ballMesh.rotation.x += 0.45;
+        ballMesh.rotation.y += 0.25;
+        ballMesh.position.set(x, y, z);
+
+        if (t < 1) {
+          raf = requestAnimationFrame(step);
+        } else {
+          raf = null;
+          onComplete();
+        }
+      };
+      raf = requestAnimationFrame(step);
+      return;
+    }
+
+    // ─── 2. MISSED BALL / LEAVE: Ball flies past batsman until leaving screen ───
+    if (isPlayAndMiss) {
+      // Camera is at Z = -14.2m. To leave screen completely, Z travels past Z = -18.5m!
+      const endPos = new Vector3(startPos.x * 1.1, Math.min(0.9, Math.max(0.4, startPos.y)), -18.5);
+      const dur = 420;
+
+      const t0 = performance.now();
+      const step = (now: number) => {
+        const elapsed = now - t0;
+        const t = Math.min(1, elapsed / dur);
+
+        const x = startPos.x + (endPos.x - startPos.x) * t;
+        const y = startPos.y + (endPos.y - startPos.y) * t;
+        const z = startPos.z + (endPos.z - startPos.z) * t;
+
+        ballMesh.rotation.x += 0.40;
+        ballMesh.position.set(x, y, z);
+
+        if (t < 1) {
+          raf = requestAnimationFrame(step);
+        } else {
+          raf = null;
+          onComplete();
+        }
+      };
+      raf = requestAnimationFrame(step);
+      return;
+    }
+
+    // ─── 3. BAT CONTACT: Outfield Shot Trajectories ─────────────────────────────
     const targetDir = shotDir || 'straight';
     let targetRuns: '1' | '2' | '4' | '6' = '1';
     if (outcome === '6') targetRuns = '6';
@@ -583,12 +671,7 @@ export function createBallTrajectoryController(scene: Scene): BallTrajectoryCont
     let dur = selectedTraj.durationMs;
     const bounces = selectedTraj.bounces;
 
-    // Special case for rare dismissals or dot defense
-    if (outcome === 'wicket') {
-      endPos = new Vector3(0, 0.45, -10.06);
-      peakY = 0.4;
-      dur = 650;
-    } else if (outcome === 'dot') {
+    if (outcome === 'dot') {
       // Soft dead-bat drop into the pitch in the user's direction
       const dotX = targetDir === 'leg' ? -2.5 : targetDir === 'off' ? 2.5 : 0.0;
       endPos = new Vector3(dotX, 0.08, -7.0);

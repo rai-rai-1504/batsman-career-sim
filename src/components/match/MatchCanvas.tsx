@@ -12,6 +12,7 @@ import {
   playCelebrateAnimation,
   playWicketShatterAnimation,
   resetBattingStance,
+  resetStumps,
 } from '../../babylon/animations';
 import { useMatchStore } from '../../state/matchStore';
 import { soundManager } from '../../audio/soundManager';
@@ -206,6 +207,7 @@ export const MatchCanvas: React.FC = () => {
       shotPlayedRef.current = false;
       cameraRigRef.current.setMode('batting');
       ballCtrlRef.current.resetToBowler();
+      if (stumpsRef.current) resetStumps(stumpsRef.current);
       if (batterRigRef.current) resetBattingStance(batterRigRef.current);
     } else if (phase === 'bowling_runup') {
       shotPlayedRef.current = false;
@@ -244,7 +246,6 @@ export const MatchCanvas: React.FC = () => {
           cameraRigRef.current.triggerScreenShake(screenShakeIntensity);
           if (batterRigRef.current) playCelebrateAnimation(batterRigRef.current, 1400);
         } else if (lastBallEvent.outcome === 'wicket') {
-          if (stumpsRef.current) playWicketShatterAnimation(stumpsRef.current);
           if (bowlerRigRef.current) playAppealAnimation(bowlerRigRef.current, 1200);
           fieldersRef.current.forEach((f) => playAppealAnimation(f, 1200));
         }
@@ -254,6 +255,13 @@ export const MatchCanvas: React.FC = () => {
           shotPlayedRef.current = true;
           playShotAnimation(batterRigRef.current, lastBallEvent.shotDirection || 'straight', 340);
         }
+
+        const isPlayAndMiss =
+          lastBallEvent.outcome === 'dot' &&
+          (!lastBallEvent.timingQuality ||
+            lastBallEvent.timingQuality === 'miss' ||
+            lastBallEvent.timingQuality === 'very_late' ||
+            lastBallEvent.timingQuality === 'very_early');
 
         if (ballCtrlRef.current) {
           ballCtrlRef.current.animateShot(
@@ -265,7 +273,10 @@ export const MatchCanvas: React.FC = () => {
                   if (!aliveRef.current.dead) finishBallAndAdvance();
                 }, 650);
               }
-            }
+            },
+            lastBallEvent.dismissalType,
+            stumpsRef.current,
+            isPlayAndMiss
           );
         }
       }

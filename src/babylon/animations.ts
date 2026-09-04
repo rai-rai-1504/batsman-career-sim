@@ -257,27 +257,116 @@ export function playCelebrateAnimation(rig: PlayerCharacterRig, _durationMs: num
   if (isRigAlive(rig)) rig.playAnimation('standing_idle', true);
 }
 
-export function playWicketShatterAnimation(stumpsNode: any, _ballPosition?: Vector3) {
-  if (!stumpsNode) return;
+// Cache of original un-shattered rest poses for stumps & bails
+const stumpsRestPoses = new Map<any, { pos: Vector3; rot: Vector3 }>();
+
+export function resetStumps(stumpsGroup: any) {
+  if (!stumpsGroup) return;
+  const list: any[] = Array.isArray(stumpsGroup) ? stumpsGroup : [stumpsGroup];
+  list.forEach((mesh) => {
+    if (mesh && !mesh.isDisposed()) {
+      const rest = stumpsRestPoses.get(mesh);
+      if (rest) {
+        mesh.position.copyFrom(rest.pos);
+        mesh.rotation.copyFrom(rest.rot);
+      }
+    }
+  });
+}
+
+export function playWicketShatterAnimation(stumpsGroup: any, _ballPosition?: Vector3) {
+  if (!stumpsGroup) return;
+  const list: any[] = Array.isArray(stumpsGroup) ? stumpsGroup : [stumpsGroup];
+  if (list.length === 0) return;
+
+  // Cache rest poses on first trigger
+  list.forEach((mesh) => {
+    if (mesh && !stumpsRestPoses.has(mesh)) {
+      stumpsRestPoses.set(mesh, {
+        pos: mesh.position.clone(),
+        rot: mesh.rotation.clone(),
+      });
+    }
+  });
+
   const t0 = performance.now();
-  const dur = 900;
-  const initialY = stumpsNode.position?.y ?? 0;
+  const dur = 1400; // dramatic 1.4s cartwheel and bail flight
+
+  // Assign distinct trajectory profiles to each stump and bail
+  const profiles = list.map((mesh, i) => {
+    const isBail = mesh.name?.includes('bail') || i >= 3;
+    const isMidStump = mesh.name?.includes('_0') || i === 1;
+    const isOffStump = mesh.name?.includes('_-1') || i === 0;
+
+    const rest = stumpsRestPoses.get(mesh) || { pos: mesh.position.clone(), rot: mesh.rotation.clone() };
+
+    let targetOffset: Vector3;
+    let targetRotation: Vector3;
+    let peakY: number;
+
+    if (isBail) {
+      // Bails fly high into the air and scatter outward
+      const side = isOffStump ? 1 : -1;
+      targetOffset = new Vector3(side * (0.6 + Math.random() * 0.4), -0.2, -2.5 - Math.random() * 1.5);
+      targetRotation = new Vector3(Math.PI * 4, Math.PI * 3, Math.PI * 2);
+      peakY = 1.4 + Math.random() * 0.5;
+    } else if (isMidStump) {
+      // Middle stump gets cartwheeled directly backward by the ball
+      targetOffset = new Vector3(0.05, 0.08, -2.8);
+      targetRotation = new Vector3(Math.PI * 1.8, 0.2, 0.4);
+      peakY = 0.55;
+    } else {
+      // Off or leg stump tilts back and sideways
+      const side = isOffStump ? 1 : -1;
+      targetOffset = new Vector3(side * 0.45, 0.08, -1.8);
+      targetRotation = new Vector3(Math.PI * 1.2, 0.4 * side, 0.8 * side);
+      peakY = 0.35;
+    }
+
+    return {
+      mesh,
+      startPos: rest.pos.clone(),
+      startRot: rest.rot.clone(),
+      targetOffset,
+      targetRotation,
+      peakY,
+      isBail,
+    };
+  });
 
   const step = (now: number) => {
-    try {
-      if (!stumpsNode.position) return;
-      const elapsed = now - t0;
-      const progress = Math.min(1, elapsed / dur);
-      stumpsNode.position.y = initialY + Math.sin(progress * Math.PI) * 0.45;
-      stumpsNode.rotation.x = progress * 0.9;
-      stumpsNode.rotation.z = Math.sin(progress * Math.PI * 2) * 0.4;
-      if (progress < 1) requestAnimationFrame(step);
-      else {
-        stumpsNode.position.y = initialY;
-        stumpsNode.rotation.x = 0;
-        stumpsNode.rotation.z = 0;
-      }
-    } catch { /* stumps disposed, exit */ }
+    const elapsed = now - t0;
+    const p = Math.min(1, elapsed / dur);
+
+    // Gravity and kinetic bounce curve
+    const easeOutQuad = 1 - (1 - p) * (1 - p);
+
+    profiles.forEach((item) => {
+      try {
+        if (!item.mesh || item.mesh.isDisposed()) return;
+
+        // Position interpolation
+        const x = item.startPos.x + item.targetOffset.x * easeOutQuad;
+        const z = item.startPos.z + item.targetOffset.z * easeOutQuad;
+
+        // Parabolic arc for height
+        const arc = Math.sin(p * Math.PI) * item.peakY;
+        const groundY = item.isBail ? 0.05 : 0.08;
+        const y = Math.max(groundY, item.startPos.y + item.targetOffset.y * easeOutQuad + arc);
+
+        item.mesh.position.set(x, y, z);
+
+        // Dynamic rotation tumbling
+        item.mesh.rotation.x = item.startRot.x + item.targetRotation.x * easeOutQuad;
+        item.mesh.rotation.y = item.startRot.y + item.targetRotation.y * easeOutQuad;
+        item.mesh.rotation.z = item.startRot.z + item.targetRotation.z * easeOutQuad;
+      } catch (_) {}
+    });
+
+    if (p < 1) {
+      requestAnimationFrame(step);
+    }
   };
+
   requestAnimationFrame(step);
 }

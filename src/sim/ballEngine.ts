@@ -287,37 +287,34 @@ export function calculateDeliverySpeedKmph(
 
 /**
  * Maps speed in km/h (90 to 150) to delivery flight duration in milliseconds
- * Benchmark: 110 km/h = 1000ms.
- * Pacing characteristics requested by user:
- * - 90-95 km/h look almost the same (1240ms -> 1200ms)
- * - 95-100 km/h look very similar (1200ms -> 1140ms)
- * - 100-110 km/h: 1140ms -> 1000ms
- * - 110-120 km/h: 1000ms -> 880ms
- * - 120-135 km/h: 880ms -> 740ms
- * - 135-140 km/h: 740ms -> 650ms (noticeably faster)
- * - 140-145 km/h: 650ms -> 560ms (very sharp difference)
- * - 145-150 km/h: 560ms -> 480ms (blistering express bolt pace!)
+ * Calibration: Every ball is faster, and 145+ feels truly express & unplayable!
+ * - 90-95 km/h: 1040ms -> 990ms (steady, readable flight)
+ * - 95-100 km/h: 990ms -> 930ms
+ * - 100-110 km/h: 930ms -> 820ms
+ * - 110-120 km/h: 820ms -> 710ms
+ * - 120-135 km/h: 710ms -> 530ms (crisp fast pace)
+ * - 135-140 km/h: 530ms -> 460ms (very brisk)
+ * - 140-145 km/h: 460ms -> 395ms (sharp reflex test)
+ * - 145-150 km/h: 395ms -> 340ms (screaming thunderbolt, truly unplayable!)
  */
 export function speedKmphToDurationMs(kmph: number): number {
   const speed = Math.max(90, Math.min(150, kmph));
 
   if (speed <= 110) {
-    // 90 km/h = 1240ms, 110 km/h = 1000ms
-    // Linear slope: 240ms over 20 km/h -> 12ms per km/h
-    return Math.round(1240 - (speed - 90) * 12);
+    // 90 km/h = 1040ms, 110 km/h = 820ms (11ms per km/h)
+    return Math.round(1040 - (speed - 90) * 11);
   } else if (speed <= 135) {
-    // 110 km/h = 1000ms, 135 km/h = 740ms
-    // Slope: 260ms over 25 km/h -> 10.4ms per km/h
-    return Math.round(1000 - (speed - 110) * 10.4);
+    // 110 km/h = 820ms, 135 km/h = 530ms (11.6ms per km/h)
+    return Math.round(820 - (speed - 110) * 11.6);
   } else if (speed <= 140) {
-    // 135 km/h = 740ms, 140 km/h = 650ms (90ms drop over 5 km/h -> 18ms/km/h)
-    return Math.round(740 - (speed - 135) * 18);
+    // 135 km/h = 530ms, 140 km/h = 460ms (70ms drop over 5 km/h -> 14ms/km/h)
+    return Math.round(530 - (speed - 135) * 14);
   } else if (speed <= 145) {
-    // 140 km/h = 650ms, 145 km/h = 560ms (90ms drop over 5 km/h -> 18ms/km/h)
-    return Math.round(650 - (speed - 140) * 18);
+    // 140 km/h = 460ms, 145 km/h = 395ms (65ms drop over 5 km/h -> 13ms/km/h)
+    return Math.round(460 - (speed - 140) * 13);
   } else {
-    // 145 km/h = 560ms, 150 km/h = 480ms (80ms drop over 5 km/h -> 16ms/km/h)
-    return Math.round(560 - (speed - 145) * 16);
+    // 145 km/h = 395ms, 150 km/h = 340ms (55ms drop over 5 km/h -> 11ms/km/h)
+    return Math.round(395 - (speed - 145) * 11);
   }
 }
 
